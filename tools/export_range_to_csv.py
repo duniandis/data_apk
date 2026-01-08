@@ -5,16 +5,16 @@ from openpyxl import load_workbook
 XLSX = "INPUT ANGKUTAN_STOCK_NEW.xlsx"
 SHEET = "DATA_UKUR"
 
-# RANGE: AH3:AQ9999
+# RANGE: Y2:AH10000
 MIN_COL = 25  # Y
 MAX_COL = 34  # AH
-MIN_ROW = 3
+MIN_ROW = 2
 MAX_ROW = 10000
 
-# OUTPUT (sesuai permintaan)
+# OUTPUT
 OUT_CSV = "loglist1.csv"
 
-# STATE untuk deteksi perubahan (supaya tidak commit kalau Excel sama)
+# STATE untuk deteksi perubahan
 STATE = ".sync_state.json"
 
 def cell_str(v):
@@ -22,7 +22,6 @@ def cell_str(v):
         return ""
     if isinstance(v, str):
         s = v.strip()
-        # kalau ada sel literal "=" saja, anggap kosong
         if s == "=":
             return ""
         return s
@@ -45,6 +44,15 @@ def save_state(st):
     with open(STATE, "w", encoding="utf-8") as f:
         json.dump(st, f, ensure_ascii=False, indent=2)
 
+def is_invalid_nobtg(x) -> bool:
+    # nobtg dianggap kosong kalau: None / "" / "0" / 0 / "0.0"
+    if x is None:
+        return True
+    if isinstance(x, (int, float)):
+        return x == 0
+    s = str(x).strip()
+    return (s == "" or s == "0" or s == "0.0")
+
 def main():
     # skip kalau Excel tidak berubah
     xhash = sha256_file(XLSX)
@@ -58,28 +66,29 @@ def main():
         raise SystemExit(f"Sheet '{SHEET}' tidak ditemukan. Ada: {wb.sheetnames}")
     ws = wb[SHEET]
 
+    wrote_any = False
     with open(OUT_CSV, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
-        wrote_any = False
 
-        for r in range(MIN_ROW, MAX_ROW + 1):
-            row_vals = []
-            all_empty = True
-            for c in range(MIN_COL, MAX_COL + 1):
-                v = ws.cell(row=r, column=c).value
-                s = cell_str(v)
-                row_vals.append(s)
-                if s != "":
-                    all_empty = False
-
-            if all_empty:
+        # jauh lebih cepat daripada ws.cell() berulang
+        for row in ws.iter_rows(
+            min_row=MIN_ROW,
+            max_row=MAX_ROW,
+            min_col=MIN_COL,
+            max_col=MAX_COL,
+            values_only=True
+        ):
+            # nobtg = kolom pertama di range (Y)
+            nobtg_raw = row[0]
+            if is_invalid_nobtg(nobtg_raw):
                 continue
 
+            row_vals = [cell_str(v) for v in row]
             w.writerow(row_vals)
             wrote_any = True
 
-        if not wrote_any:
-            print("Warning: tidak ada baris berisi data dalam range.")
+    if not wrote_any:
+        print("Warning: tidak ada baris berisi data dalam range (setelah filter nobtg).")
 
     st["xlsx_sha256"] = xhash
     save_state(st)
