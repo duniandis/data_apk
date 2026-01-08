@@ -2,13 +2,19 @@ name: Sync pCloud Excel -> loglist1.csv
 
 on:
   schedule:
-    # polling tiap 10 menit (akan update hanya jika Excel berubah)
-    - cron: "*/10 * * * *"
+    # tiap 3 jam sekali, menit 05 (hindari jam bulat)
+    - cron: "5 */3 * * *"
   workflow_dispatch: {}
+
+# Anti numpuk: kalau ada run baru, run lama otomatis dibatalkan
+concurrency:
+  group: sync-pcloud-loglist1
+  cancel-in-progress: true
 
 jobs:
   sync:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
       - name: Checkout repo
