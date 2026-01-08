@@ -9,7 +9,7 @@ SHEET = "POSISI TERAKHIR"
 MIN_COL = 34  # AH
 MAX_COL = 43  # AQ
 MIN_ROW = 3
-MAX_ROW = 9999
+MAX_ROW = 6000
 
 # OUTPUT (sesuai permintaan)
 OUT_CSV = "loglist1.csv"
