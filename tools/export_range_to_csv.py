@@ -3,13 +3,13 @@ from openpyxl import load_workbook
 
 # INPUT
 XLSX = "INPUT ANGKUTAN_STOCK_NEW.xlsx"
-SHEET = "POSISI TERAKHIR"
+SHEET = "DATA_UKUR"
 
 # RANGE: AH3:AQ9999
-MIN_COL = 34  # AH
-MAX_COL = 43  # AQ
+MIN_COL = 25  # Y
+MAX_COL = 34  # AH
 MIN_ROW = 3
-MAX_ROW = 6000
+MAX_ROW = 10000
 
 # OUTPUT (sesuai permintaan)
 OUT_CSV = "loglist1.csv"
