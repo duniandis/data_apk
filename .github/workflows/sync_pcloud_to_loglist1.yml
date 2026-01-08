@@ -6,6 +6,8 @@ on:
     - cron: "5 */3 * * *"
   workflow_dispatch: {}
 
+permissions:
+  contents: write
 # Anti numpuk: kalau ada run baru, run lama otomatis dibatalkan
 concurrency:
   group: sync-pcloud-loglist1
