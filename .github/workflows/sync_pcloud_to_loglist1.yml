@@ -43,7 +43,7 @@ jobs:
           rclone copy \
             "pcloud:TUK (CLOUD)/2026/INPUT ANGKUT DAN STOK POSISI/INPUT ANGKUTAN_STOCK_NEW.xlsx" \
             . \
-            --progress
+            --stats 10s --stats-one-line
           ls -lh INPUT\ ANGKUTAN_STOCK_NEW.xlsx
 
       - name: Setup Python
