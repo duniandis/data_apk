@@ -2,7 +2,7 @@ import csv, json, hashlib, os
 from openpyxl import load_workbook
 
 # INPUT
-XLSX = "INPUT ANGKUTAN_STOCK_NEW.xlsx"
+XLSX = "INPUT_ANGKUTAN_STOCK_NEW.xlsx"
 SHEET = "POSISI TERAKHIR"
 
 # OUTPUT RANGE (tetap yang kamu mau): Y..AH
