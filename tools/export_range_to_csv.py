@@ -18,7 +18,7 @@ MIN_ROW = 3        # pastikan ini baris header kamu (kalau header di row 2)
 MAX_ROW = 10000
 
 OUT_CSV = "loglist1.csv"
-STATE = ".sync_state.json"
+STATE = ".sync_state_loglist1.json"
 
 def cell_str(v):
     if v is None:
