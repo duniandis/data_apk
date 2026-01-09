@@ -57,7 +57,7 @@ jobs:
 
       - name: Export Excel range -> loglist2.csv
         run: |
-          python tools/export_range_to_csv.py
+          python tools/export_csv_loglist2.py
           head -n 3 loglist2.csv || true
 
       - name: Commit changes if any
