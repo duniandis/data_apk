@@ -41,10 +41,10 @@ jobs:
       - name: Download Excel from pCloud
         run: |
           rclone copy \
-            "pcloud:TUK (CLOUD)/2026/INPUT ANGKUT DAN STOK POSISI/INPUT ANGKUTAN_STOCK_NEW.xlsx" \
+            "pcloud:TUK (CLOUD)/2026/INPUT ANGKUT DAN STOK POSISI/INPUT_ANGKUTAN_STOCK_NEW.xlsx" \
             . \
             --stats 10s --stats-one-line
-          ls -lh INPUT\ ANGKUTAN_STOCK_NEW.xlsx
+          ls -lh INPUT_ANGKUTAN_STOCK_NEW.xlsx
 
       - name: Setup Python
         uses: actions/setup-python@v5
