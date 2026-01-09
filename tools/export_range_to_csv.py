@@ -3,18 +3,21 @@ from openpyxl import load_workbook
 
 # INPUT
 XLSX = "INPUT ANGKUTAN_STOCK_NEW.xlsx"
-SHEET = "DATA_UKUR"
+SHEET = "POSISI TERAKHIR"
 
-# RANGE: Y2:AH10000
-MIN_COL = 25  # Y
-MAX_COL = 34  # AH
-MIN_ROW = 2
+# OUTPUT RANGE (tetap yang kamu mau): Y..AH
+OUT_MIN_COL = 34  # AH
+OUT_MAX_COL = 43  # AQ
+
+# READ RANGE (tambahkan kolom T untuk filter): T..AH
+READ_MIN_COL = 20  # T (posisi terakhir)
+READ_MAX_COL = 43  # AQ
+
+# ROWS
+MIN_ROW = 3        # pastikan ini baris header kamu (kalau header di row 2)
 MAX_ROW = 10000
 
-# OUTPUT
 OUT_CSV = "loglist1.csv"
-
-# STATE untuk deteksi perubahan
 STATE = ".sync_state.json"
 
 def cell_str(v):
@@ -45,13 +48,27 @@ def save_state(st):
         json.dump(st, f, ensure_ascii=False, indent=2)
 
 def is_invalid_nobtg(x) -> bool:
-    # nobtg dianggap kosong kalau: None / "" / "0" / 0 / "0.0"
     if x is None:
         return True
     if isinstance(x, (int, float)):
         return x == 0
     s = str(x).strip()
     return (s == "" or s == "0" or s == "0.0")
+
+def should_skip_posisi(posisi_raw) -> bool:
+    """
+    Skip kalau posisi terakhir:
+    - DKDS (persis)
+    - mengandung kata MILIR (MILIR 1-1-2026, MILIR26-11-2025, dll)
+    """
+    if posisi_raw is None:
+        return False
+    s = str(posisi_raw).strip().upper()
+    if s == "DKDS":
+        return True
+    if "MILIR" in s:
+        return True
+    return False
 
 def main():
     # skip kalau Excel tidak berubah
@@ -66,30 +83,45 @@ def main():
         raise SystemExit(f"Sheet '{SHEET}' tidak ditemukan. Ada: {wb.sheetnames}")
     ws = wb[SHEET]
 
+    out_start = OUT_MIN_COL - READ_MIN_COL
+    out_end = out_start + (OUT_MAX_COL - OUT_MIN_COL + 1)
+
     wrote_any = False
     with open(OUT_CSV, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
 
-        # jauh lebih cepat daripada ws.cell() berulang
-        for row in ws.iter_rows(
+        for i, row in enumerate(ws.iter_rows(
             min_row=MIN_ROW,
             max_row=MAX_ROW,
-            min_col=MIN_COL,
-            max_col=MAX_COL,
+            min_col=READ_MIN_COL,
+            max_col=READ_MAX_COL,
             values_only=True
-        ):
-            # nobtg = kolom pertama di range (Y)
-            nobtg_raw = row[0]
+        ), start=MIN_ROW):
+
+            posisi_raw = row[0]  # kolom T
+            out_row = row[out_start:out_end]  # Y..AH
+
+            # header wajib ikut (baris pertama di range)
+            if i == MIN_ROW:
+                w.writerow([cell_str(v) for v in out_row])
+                wrote_any = True
+                continue
+
+            nobtg_raw = out_row[0]  # kolom Y = noBtg (sesuai output kamu)
+
+            # filter baris:
             if is_invalid_nobtg(nobtg_raw):
                 continue
 
-            row_vals = [cell_str(v) for v in row]
-            w.writerow(row_vals)
+            # skip kalau posisi DKDS / MILIR
+            if should_skip_posisi(posisi_raw):
+                continue
+
+            w.writerow([cell_str(v) for v in out_row])
             wrote_any = True
 
     if not wrote_any:
-        print("Warning: tidak ada baris berisi data dalam range (setelah filter nobtg).")
-
+        print("Warning: tidak ada baris data yang lolos filter.")
     st["xlsx_sha256"] = xhash
     save_state(st)
     print(f"Export done -> {OUT_CSV}")
