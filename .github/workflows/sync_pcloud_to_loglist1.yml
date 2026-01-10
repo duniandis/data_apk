@@ -2,9 +2,8 @@ name: Sync pCloud Excel -> loglist1.csv
 
 on:
   schedule:
-    # 2x satu hari
-    - cron: "5 3 * * *"    # 10:05 WIB
-    - cron: "5 16 * * *"  # 23:05 WIB
+    # tiap jam lewat menit 15
+    - cron: "15 * * * *"    # menit ke 15
   workflow_dispatch: {}
 
 permissions:
