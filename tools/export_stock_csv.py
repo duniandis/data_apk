@@ -121,7 +121,7 @@ def main():
     st = load_state()
     if st.get("xlsx_sha256") == xhash:
         print("Excel unchanged; skip export.")
-        return
+        #return
 
     wb = load_workbook(XLSX, read_only=True, data_only=True)
     if SHEET not in wb.sheetnames:
