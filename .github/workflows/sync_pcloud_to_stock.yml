@@ -2,7 +2,7 @@ name: Sync pCloud Excel -> stock.csv
 
 on:
   schedule:
-    - cron: "35 * * * *"   # tiap jam menit 35
+    - cron: "35 * * * *"   # tiap jam menit 35 (UTC)
   workflow_dispatch: {}
 
 permissions:
@@ -30,17 +30,17 @@ jobs:
           PCLOUD_TOKEN: ${{ secrets.PCLOUD_TOKEN }}
         run: |
           mkdir -p ~/.config/rclone
-          cat > ~/.config/rclone/rclone.conf <<EOF
-          [pcloud]
-          type = pcloud
-          token = ${PCLOUD_TOKEN}
-          EOF
+          printf '%s\n' \
+            "[pcloud]" \
+            "type = pcloud" \
+            "token = ${PCLOUD_TOKEN}" \
+            > ~/.config/rclone/rclone.conf
 
       - name: Download Excel from pCloud
         run: |
-          rclone copy \
+          rclone copyto \
             "pcloud:TUK (CLOUD)/2026/INPUT ANGKUT DAN STOK POSISI/INPUT_ANGKUTAN_STOCK_NEW.xlsx" \
-            . \
+            "./INPUT_ANGKUTAN_STOCK_NEW.xlsx" \
             --stats 10s --stats-one-line
           ls -lh INPUT_ANGKUTAN_STOCK_NEW.xlsx
 
@@ -59,14 +59,34 @@ jobs:
           python tools/export_stock_csv.py
           head -n 5 stock.csv || true
 
-      - name: Commit changes if any
+      - name: Stage and detect changes
+        id: detect
+        run: |
+          git add stock.csv .sync_state_stock.json
+
+          if git diff --cached --quiet; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "No changes."
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "Changed detected."
+          fi
+
+      - name: Notify ntfy (only if changed)
+        if: steps.detect.outputs.changed == 'true'
+        run: |
+          MSG="$(python tools/stock_to_message.py)"
+
+          curl -sS -X POST https://ntfy.sh/auto-stock-notif \
+            -H "Title: 📦 Update Stock" \
+            -H "Priority: 4" \
+            -H "Tags: stock,log,wood" \
+            --data-binary "$MSG"
+
+      - name: Commit & push (only if changed)
+        if: steps.detect.outputs.changed == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add stock.csv .sync_state_stock.json
-          if git diff --cached --quiet; then
-            echo "No changes."
-            exit 0
-          fi
           git commit -m "Auto update stock.csv"
           git push
