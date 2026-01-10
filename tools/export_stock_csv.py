@@ -5,17 +5,16 @@ from openpyxl import load_workbook
 XLSX  = "INPUT_ANGKUTAN_STOCK_NEW.xlsx"
 SHEET = "POSISI TERAKHIR"
 
-# Data range
 MIN_ROW = 4
 MAX_ROW = 10000
 
-# Kolom penting (1-based)
+# 1-based column index
 COL_JENIS  = 8   # H
 COL_VOL    = 13  # M
 COL_KELAS  = 18  # R
 COL_TGL    = 19  # S
 COL_POSISI = 20  # T
-COL_NOBTG  = 2   # B (No batang)
+COL_NOBTG  = 2   # B
 
 OUT_CSV = "stock.csv"
 STATE   = ".sync_state_stock.json"
@@ -46,16 +45,13 @@ def norm_str(v):
     return s
 
 def parse_date(v):
-    # openpyxl kadang return datetime
     if isinstance(v, datetime):
         return v.date()
     if isinstance(v, date):
         return v
-    # coba parse string (kalau ada)
     s = norm_str(v)
     if not s:
         return None
-    # fallback: coba format umum
     for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y"):
         try:
             return datetime.strptime(s, fmt).date()
@@ -85,7 +81,7 @@ def safe_float(v):
         return 0.0
 
 def main():
-    # skip kalau Excel belum berubah (hemat run/commit)
+    # skip kalau Excel belum berubah
     xhash = sha256_file(XLSX)
     st = load_state()
     if st.get("xlsx_sha256") == xhash:
@@ -97,28 +93,23 @@ def main():
         raise SystemExit(f"Sheet '{SHEET}' tidak ditemukan. Ada: {wb.sheetnames}")
     ws = wb[SHEET]
 
-    # key = (posisi, kelas, jenis)
-    agg = {}  # {key: {"btg": int, "vol": float, "last": date}}
+    # detail group: (posisi, kelas, jenis)
+    agg = {}  # key -> {"btg": int, "vol": float, "last": date}
     last_global = None
 
     for r in range(MIN_ROW, MAX_ROW + 1):
         nobtg  = norm_str(ws.cell(r, COL_NOBTG).value)
+        if not nobtg:
+            continue
+
         jenis  = norm_str(ws.cell(r, COL_JENIS).value)
         kelas  = norm_str(ws.cell(r, COL_KELAS).value)
         posisi = norm_str(ws.cell(r, COL_POSISI).value)
         tgl    = parse_date(ws.cell(r, COL_TGL).value)
         vol    = safe_float(ws.cell(r, COL_VOL).value)
 
-        # stop/skip baris kosong
-        if not nobtg:
-            continue
-
         if should_skip_posisi(posisi):
             continue
-
-        if not tgl:
-            # kalau tanggal kosong, tetap masuk tapi last per group tidak berubah
-            pass
 
         key = (posisi, kelas, jenis)
         rec = agg.get(key)
@@ -135,16 +126,58 @@ def main():
             if last_global is None or tgl > last_global:
                 last_global = tgl
 
-    # tulis stock.csv
+    # buat total per posisi + total global
+    pos_tot = {}   # posisi -> {"btg": int, "vol": float, "last": date}
+    glob_btg = 0
+    glob_vol = 0.0
+
+    for (posisi, _kelas, _jenis), rec in agg.items():
+        pt = pos_tot.get(posisi)
+        if pt is None:
+            pt = {"btg": 0, "vol": 0.0, "last": None}
+            pos_tot[posisi] = pt
+
+        pt["btg"] += rec["btg"]
+        pt["vol"] += rec["vol"]
+        if rec["last"]:
+            if pt["last"] is None or rec["last"] > pt["last"]:
+                pt["last"] = rec["last"]
+
+        glob_btg += rec["btg"]
+        glob_vol += rec["vol"]
+
+    last_g_str = last_global.strftime("%d-%m-%Y") if last_global else ""
+
+    # tulis CSV
     with open(OUT_CSV, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
-        w.writerow(["posisi", "kelas_diameter", "jenis", "btg", "volume_m3", "mutasi_terakhir_posisi", "mutasi_terakhir_global"])
+        w.writerow(["posisi","kelas_diameter","jenis","btg","volume_m3","mutasi_terakhir_posisi","mutasi_terakhir_global"])
 
-        # urutkan biar rapi
-        for (posisi, kelas, jenis), rec in sorted(agg.items(), key=lambda x: (x[0][0], x[0][1], x[0][2])):
+        # urutkan detail by posisi lalu kelas lalu jenis
+        items = sorted(agg.items(), key=lambda x: (x[0][0], x[0][1], x[0][2]))
+
+        current_pos = None
+        for (posisi, kelas, jenis), rec in items:
+            # kalau pindah posisi, tulis TOTAL posisi sebelumnya
+            if current_pos is not None and posisi != current_pos:
+                pt = pos_tot[current_pos]
+                pt_last = pt["last"].strftime("%d-%m-%Y") if pt["last"] else ""
+                w.writerow([current_pos, "TOTAL", "", pt["btg"], round(pt["vol"], 3), pt_last, last_g_str])
+                w.writerow([])  # baris kosong pemisah
+
+            current_pos = posisi
             last_pos = rec["last"].strftime("%d-%m-%Y") if rec["last"] else ""
-            last_g   = last_global.strftime("%d-%m-%Y") if last_global else ""
-            w.writerow([posisi, kelas, jenis, rec["btg"], round(rec["vol"], 3), last_pos, last_g])
+            w.writerow([posisi, kelas, jenis, rec["btg"], round(rec["vol"], 3), last_pos, last_g_str])
+
+        # TOTAL posisi terakhir
+        if current_pos is not None:
+            pt = pos_tot[current_pos]
+            pt_last = pt["last"].strftime("%d-%m-%Y") if pt["last"] else ""
+            w.writerow([current_pos, "TOTAL", "", pt["btg"], round(pt["vol"], 3), pt_last, last_g_str])
+            w.writerow([])
+
+        # TOTAL GLOBAL
+        w.writerow(["GLOBAL", "TOTAL", "", glob_btg, round(glob_vol, 3), last_g_str, last_g_str])
 
     st["xlsx_sha256"] = xhash
     save_state(st)
