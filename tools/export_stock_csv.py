@@ -2,22 +2,28 @@ import csv, json, hashlib, os
 from datetime import datetime, date
 from openpyxl import load_workbook
 
+# ========= INPUT =========
 XLSX  = "INPUT_ANGKUTAN_STOCK_NEW.xlsx"
 SHEET = "POSISI TERAKHIR"
 
-MIN_ROW = 4
+# baris data dimulai dari row 3 (sesuaikan kalau header kamu di row 3)
+MIN_ROW = 3
 MAX_ROW = 10000
 
-# 1-based column index
+# Kolom (1-based)
+COL_NOBTG  = 2   # B
 COL_JENIS  = 8   # H
 COL_VOL    = 13  # M
 COL_KELAS  = 18  # R
 COL_TGL    = 19  # S
 COL_POSISI = 20  # T
-COL_NOBTG  = 2   # B
 
+# ========= OUTPUT =========
 OUT_CSV = "stock.csv"
 STATE   = ".sync_state_stock.json"
+
+# Stop baca kalau ketemu baris kosong berturut-turut (biar cepat)
+MAX_EMPTY_STREAK = 250
 
 def sha256_file(path):
     h = hashlib.sha256()
@@ -37,35 +43,30 @@ def save_state(st):
         json.dump(st, f, ensure_ascii=False, indent=2)
 
 def norm_str(v):
+    """CATATAN: tidak mengubah '=' jadi kosong (sesuai permintaan)."""
     if v is None:
         return ""
+    return str(v).strip()
+
+def is_invalid_nobtg(v) -> bool:
+    """
+    Patokan baris kosong:
+    - noBtg kosong
+    - "0", "0.0"
+    - "-"
+    (TIDAK memasukkan "=")
+    """
+    if v is None:
+        return True
+    if isinstance(v, (int, float)):
+        return float(v) == 0.0
     s = str(v).strip()
-    if s == "=":
-        return ""
-    return s
-
-def parse_date(v):
-    if isinstance(v, datetime):
-        return v.date()
-    if isinstance(v, date):
-        return v
-    s = norm_str(v)
-    if not s:
-        return None
-    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y"):
-        try:
-            return datetime.strptime(s, fmt).date()
-        except:
-            pass
-    return None
-
-def should_skip_posisi(posisi_raw) -> bool:
-    s = norm_str(posisi_raw).upper()
-    if not s:
+    if s == "":
         return True
-    if s == "DKDS":
+    if s == "-":
         return True
-    if "MILIR" in s:
+    # handle string angka
+    if s == "0" or s == "0.0":
         return True
     return False
 
@@ -80,8 +81,42 @@ def safe_float(v):
     except:
         return 0.0
 
+def parse_date(v):
+    # Openpyxl bisa return datetime/date kalau cell type date
+    if isinstance(v, datetime):
+        return v.date()
+    if isinstance(v, date):
+        return v
+
+    s = norm_str(v)
+    if not s:
+        return None
+
+    # coba beberapa format umum
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y"):
+        try:
+            return datetime.strptime(s, fmt).date()
+        except:
+            pass
+    return None
+
+def should_skip_posisi(posisi_raw) -> bool:
+    """
+    Skip kayu yang sudah tidak mungkin diangkut:
+    - posisi = DKDS (persis)
+    - posisi mengandung MILIR
+    """
+    s = norm_str(posisi_raw).upper()
+    if not s:
+        return True
+    if s == "DKDS":
+        return True
+    if "MILIR" in s:
+        return True
+    return False
+
 def main():
-    # skip kalau Excel belum berubah
+    # skip kalau Excel tidak berubah
     xhash = sha256_file(XLSX)
     st = load_state()
     if st.get("xlsx_sha256") == xhash:
@@ -93,20 +128,34 @@ def main():
         raise SystemExit(f"Sheet '{SHEET}' tidak ditemukan. Ada: {wb.sheetnames}")
     ws = wb[SHEET]
 
-    # detail group: (posisi, kelas, jenis)
-    agg = {}  # key -> {"btg": int, "vol": float, "last": date}
+    # detail group: (posisi, kelas, jenis) -> btg, vol, last_date
+    agg = {}
     last_global = None
 
-    for r in range(MIN_ROW, MAX_ROW + 1):
-        nobtg  = norm_str(ws.cell(r, COL_NOBTG).value)
-        if not nobtg:
-            continue
+    empty_streak = 0
+    processed_rows = 0
 
-        jenis  = norm_str(ws.cell(r, COL_JENIS).value)
-        kelas  = norm_str(ws.cell(r, COL_KELAS).value)
-        posisi = norm_str(ws.cell(r, COL_POSISI).value)
-        tgl    = parse_date(ws.cell(r, COL_TGL).value)
-        vol    = safe_float(ws.cell(r, COL_VOL).value)
+    for row in ws.iter_rows(min_row=MIN_ROW, max_row=MAX_ROW, values_only=True):
+        processed_rows += 1
+
+        nobtg_raw = row[COL_NOBTG - 1]
+
+        # Filter cepat dulu berdasarkan noBtg
+        if is_invalid_nobtg(nobtg_raw):
+            empty_streak += 1
+            if empty_streak >= MAX_EMPTY_STREAK:
+                print(f"Stop reading: {MAX_EMPTY_STREAK} baris kosong berturut-turut.")
+                break
+            continue
+        else:
+            empty_streak = 0
+
+        # Baru baca kolom lain kalau noBtg valid
+        jenis  = norm_str(row[COL_JENIS  - 1])
+        vol    = safe_float(row[COL_VOL  - 1])
+        kelas  = norm_str(row[COL_KELAS  - 1])
+        tgl    = parse_date(row[COL_TGL  - 1])
+        posisi = norm_str(row[COL_POSISI - 1])
 
         if should_skip_posisi(posisi):
             continue
@@ -126,8 +175,8 @@ def main():
             if last_global is None or tgl > last_global:
                 last_global = tgl
 
-    # buat total per posisi + total global
-    pos_tot = {}   # posisi -> {"btg": int, "vol": float, "last": date}
+    # total per posisi + total global
+    pos_tot = {}
     glob_btg = 0
     glob_vol = 0.0
 
@@ -151,9 +200,14 @@ def main():
     # tulis CSV
     with open(OUT_CSV, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
-        w.writerow(["posisi","kelas_diameter","jenis","btg","volume_m3","mutasi_terakhir_posisi","mutasi_terakhir_global"])
+        w.writerow([
+            "posisi", "kelas_diameter", "jenis",
+            "btg", "volume_m3",
+            "mutasi_terakhir_posisi",
+            "mutasi_terakhir_global"
+        ])
 
-        # urutkan detail by posisi lalu kelas lalu jenis
+        # urutkan detail
         items = sorted(agg.items(), key=lambda x: (x[0][0], x[0][1], x[0][2]))
 
         current_pos = None
@@ -163,7 +217,7 @@ def main():
                 pt = pos_tot[current_pos]
                 pt_last = pt["last"].strftime("%d-%m-%Y") if pt["last"] else ""
                 w.writerow([current_pos, "TOTAL", "", pt["btg"], round(pt["vol"], 3), pt_last, last_g_str])
-                w.writerow([])  # baris kosong pemisah
+                w.writerow([])  # pemisah
 
             current_pos = posisi
             last_pos = rec["last"].strftime("%d-%m-%Y") if rec["last"] else ""
@@ -182,6 +236,7 @@ def main():
     st["xlsx_sha256"] = xhash
     save_state(st)
     print(f"Export done -> {OUT_CSV}")
+    print(f"Processed rows (iter): {processed_rows}, groups: {len(agg)}")
 
 if __name__ == "__main__":
     main()
