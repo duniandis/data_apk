@@ -166,7 +166,6 @@ def main():
 
     # Output
     lines = []
-    lines.append("📦 UPDATE STOCK")
     lines.append("")
     lines.append(f"Update terakhir (mutasi): {fmt_date(global_last)}")
     lines.append("")
@@ -189,7 +188,6 @@ def main():
         p = posisi_data[pos]
         lines.append(sep)
         lines.append(pos)
-        lines.append(f"Terakhir mutasi : {fmt_date(p['last_date'])}")
         lines.append(f"Total : {p['total_btg']} btg | {fmt_vol(p['total_vol'])}")
         lines.append("")
 
