@@ -167,12 +167,11 @@ def main():
     # Output
     lines = []
     lines.append("")
-    lines.append(f"Update terakhir (mutasi): {fmt_date(global_last)}")
+    lines.append(f"Update (mutasi terakhir): {fmt_date(global_last)}")
     lines.append("")
-    lines.append("STOCK GLOBAL")
+    lines.append("STOCK KESELURUHAN")
     lines.append(f"Batang : {global_btg} btg")
     lines.append(f"Volume : {fmt_vol(global_vol)}")
-    lines.append("")
 
     # Format kolom jenis agar rapi
     # tentukan lebar jenis maksimum (dibatasi biar gak kepanjangan)
@@ -189,7 +188,6 @@ def main():
         lines.append(sep)
         lines.append(pos)
         lines.append(f"Total : {p['total_btg']} btg | {fmt_vol(p['total_vol'])}")
-        lines.append("")
 
         # urutkan jenis by volume desc (lebih enak dilihat)
         items = list(p["jenis"].items())
@@ -199,8 +197,6 @@ def main():
             j = jenis[:max_jenis_len]
             jpad = j.ljust(max_jenis_len)
             lines.append(f"  {jpad} : {agg['btg']:>5} btg | {fmt_vol(agg['vol']).rjust(12)}")
-
-        lines.append("")
 
     print("\n".join(lines))
 
