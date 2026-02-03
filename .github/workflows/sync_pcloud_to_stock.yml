@@ -2,7 +2,7 @@ name: Sync pCloud Excel -> stock.csv
 
 on:
   schedule:
-    - cron: "35 */5 * * *"   # tiap 5 jam menit 35 (UTC)
+    - cron: "05 * * * *"   # tiap jam menit 05 (UTC)
   workflow_dispatch: {}
 
 permissions:
