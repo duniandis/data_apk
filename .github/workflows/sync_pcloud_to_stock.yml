@@ -88,7 +88,7 @@ jobs:
           MSG="$(python tools/stock_to_message.py)"
 
           curl -sS -X POST https://ntfy.sh/auto-stock-notif \
-            -H "Title: 📦 Update Stock" \
+            -H "Title: 📦 Update Stock (internal WRS)" \
             -H "Priority: 4" \
             -H "Tags: stock,log,wood" \
             --data-binary "$MSG"
