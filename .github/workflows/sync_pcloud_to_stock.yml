@@ -20,6 +20,8 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install rclone
         run: |
@@ -97,8 +99,8 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # pastikan staging ada untuk commit
           git add stock.csv .sync_state_stock.json
-
           git commit -m "Auto update stock.csv" || echo "Nothing to commit"
+
+          git pull --rebase
           git push
