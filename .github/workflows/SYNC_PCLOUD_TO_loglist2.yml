@@ -2,16 +2,17 @@ name: Sync pCloud Excel -> loglist2.csv
 
 on:
   schedule:
-    # 1x satu hari
-    - cron: "5 4 * * *"    # 11:05 WIB
+    # 1x sehari
+    - cron: "5 4 * * *"    # 11:05 WIB (UTC 04:05)
   workflow_dispatch: {}
 
 permissions:
   contents: write
-# Anti numpuk: kalau ada run baru, run lama otomatis dibatalkan
+
+# Satu jalur sama semua sync, tapi tidak saling membatalkan
 concurrency:
-  group: sync-pcloud-loglist2
-  cancel-in-progress: true
+  group: sync-pcloud
+  cancel-in-progress: false
 
 jobs:
   sync:
@@ -21,6 +22,8 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install rclone
         run: |
@@ -37,12 +40,18 @@ jobs:
           token = ${PCLOUD_TOKEN}
           EOF
 
-      - name: Download Excel from pCloud
+      - name: Download Excel from pCloud (retry)
         run: |
-          rclone copy \
-            "pcloud:TUK (CLOUD)/2026/INPUT ANGKUT DAN STOK POSISI/INPUT_ANGKUTAN_STOCK_NEW.xlsx" \
-            . \
-            --stats 10s --stats-one-line
+          for i in 1 2 3 4 5; do
+            echo "Attempt $i..."
+            rclone copyto \
+              "pcloud:TUK (CLOUD)/2026/INPUT ANGKUT DAN STOK POSISI/INPUT_ANGKUTAN_STOCK_NEW.xlsx" \
+              "./INPUT_ANGKUTAN_STOCK_NEW.xlsx" \
+              --retries 5 --low-level-retries 20 \
+              --stats 10s --stats-one-line && break
+            sleep $((i*10))
+          done
+
           ls -lh INPUT_ANGKUTAN_STOCK_NEW.xlsx
 
       - name: Setup Python
@@ -58,16 +67,25 @@ jobs:
       - name: Export Excel range -> loglist2.csv
         run: |
           python tools/export_csv_loglist2.py
+          test -f loglist2.csv || (echo "loglist2.csv not generated" && exit 1)
           head -n 3 loglist2.csv || true
 
       - name: Commit changes if any
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # pastikan state ada agar git add tidak gagal
+          test -f .sync_state_loglist2.json || echo "{}" > .sync_state_loglist2.json
+
           git add loglist2.csv .sync_state_loglist2.json
+
           if git diff --cached --quiet; then
             echo "No changes."
             exit 0
           fi
-          git commit -m "Auto update loglist2.csv"
+
+          git commit -m "Auto update loglist2.csv" || echo "Nothing to commit"
+
+          git pull --rebase
           git push
