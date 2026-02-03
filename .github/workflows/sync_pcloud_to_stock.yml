@@ -96,5 +96,9 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git commit -m "Auto update stock.csv"
+
+          # pastikan staging ada untuk commit
+          git add stock.csv .sync_state_stock.json
+
+          git commit -m "Auto update stock.csv" || echo "Nothing to commit"
           git push
