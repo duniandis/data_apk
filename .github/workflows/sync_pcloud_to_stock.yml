@@ -2,14 +2,14 @@ name: Sync pCloud Excel -> stock.csv
 
 on:
   schedule:
-    - cron: "35 * * * *"   # tiap jam menit 35 (UTC)
+    - cron: "35 */5 * * *"   # tiap 5 jam menit 35 (UTC)
   workflow_dispatch: {}
 
 permissions:
   contents: write
 
 concurrency:
-  group: sync-pcloud-stock
+  group: sync-pcloud
   cancel-in-progress: true
 
 jobs:
@@ -36,12 +36,17 @@ jobs:
             "token = ${PCLOUD_TOKEN}" \
             > ~/.config/rclone/rclone.conf
 
-      - name: Download Excel from pCloud
+      - name: Download Excel from pCloud (retry)
         run: |
-          rclone copyto \
-            "pcloud:TUK (CLOUD)/2026/INPUT ANGKUT DAN STOK POSISI/INPUT_ANGKUTAN_STOCK_NEW.xlsx" \
-            "./INPUT_ANGKUTAN_STOCK_NEW.xlsx" \
-            --stats 10s --stats-one-line
+          for i in 1 2 3 4 5; do
+            echo "Attempt $i..."
+            rclone copyto \
+              "pcloud:TUK (CLOUD)/2026/INPUT ANGKUT DAN STOK POSISI/INPUT_ANGKUTAN_STOCK_NEW.xlsx" \
+              "./INPUT_ANGKUTAN_STOCK_NEW.xlsx" \
+              --retries 5 --low-level-retries 20 \
+              --stats 10s --stats-one-line && break
+            sleep $((i*10))
+          done
           ls -lh INPUT_ANGKUTAN_STOCK_NEW.xlsx
 
       - name: Setup Python
@@ -62,6 +67,9 @@ jobs:
       - name: Stage and detect changes
         id: detect
         run: |
+          # pastikan file state ada agar git add tidak gagal
+          test -f .sync_state_stock.json || echo "{}" > .sync_state_stock.json
+
           git add stock.csv .sync_state_stock.json
 
           if git diff --cached --quiet; then
