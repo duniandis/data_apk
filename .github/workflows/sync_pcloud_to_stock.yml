@@ -2,7 +2,7 @@ name: Sync pCloud Excel -> stock.csv
 
 on:
   schedule:
-    - cron: "05 * * * *"   # tiap jam menit 05 (UTC)
+    - cron: "5 * * * *"   # tiap jam menit 05 (UTC)
   workflow_dispatch: {}
 
 permissions:
@@ -49,6 +49,7 @@ jobs:
               --stats 10s --stats-one-line && break
             sleep $((i*10))
           done
+          test -f INPUT_ANGKUTAN_STOCK_NEW.xlsx || (echo "ERROR: file not downloaded" && exit 1)
           ls -lh INPUT_ANGKUTAN_STOCK_NEW.xlsx
 
       - name: Setup Python
