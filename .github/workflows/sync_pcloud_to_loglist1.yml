@@ -2,15 +2,15 @@ name: Sync pCloud Excel -> loglist1.csv
 
 on:
   schedule:
-    # tiap jam lewat menit 15
-    - cron: "15 * * * *"    # menit ke 15
+    # tiap 4 jam lewat menit 15
+    - cron: "15 */4 * * *"
   workflow_dispatch: {}
 
 permissions:
   contents: write
 # Anti numpuk: kalau ada run baru, run lama otomatis dibatalkan
 concurrency:
-  group: sync-pcloud-loglist1
+  group: sync-pcloud
   cancel-in-progress: true
 
 jobs:
@@ -64,6 +64,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          test -f .sync_state_loglist1.json || echo "{}" > .sync_state_loglist1.json
           git add loglist1.csv .sync_state_loglist1.json
           if git diff --cached --quiet; then
             echo "No changes."
