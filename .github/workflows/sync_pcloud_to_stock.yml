@@ -213,13 +213,10 @@ jobs:
 
           header = [
               "📦 UPDATE STOCK KAYU BULAT",
-              f"Dikirim: {now}",
           ]
 
           if latest_global:
               header.append(f"Mutasi terakhir: {latest_global}")
-
-          header.append("Format: BTG | Volume m³")
           header.append("")
 
           chunks = []
@@ -254,7 +251,6 @@ jobs:
           for f in ntfy_part_*.txt; do
             echo "Sending $f ..."
             curl -sS -X POST https://ntfy.sh/auto-stock-notif \
-              -H "Title: 📦 Update Stock Kayu" \
               -H "Priority: 4" \
               -H "Tags: wood,stock,package" \
               -H "Content-Type: text/plain; charset=utf-8" \
