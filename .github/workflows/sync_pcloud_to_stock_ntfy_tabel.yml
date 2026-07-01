@@ -1,4 +1,4 @@
-name: Sync pCloud Excel -> stock.csv
+name: Sync pCloud Excel test -> stock.csv
 
 on:
   schedule:
