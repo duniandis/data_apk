@@ -1,9 +1,9 @@
-#name: Sync pCloud Excel -> stock.csv
+name: Sync pCloud Excel -> stock.csv
 
-#on:
-#  schedule:
-#    - cron: "5 * * * *"
-#  workflow_dispatch: {}
+on:
+  schedule:
+    - cron: "5 * * * *"
+  workflow_dispatch: {}
 
 permissions:
   contents: write
@@ -101,7 +101,7 @@ jobs:
 
           # False = setiap jenis+kategori dihitung 1 BTG seperti tampilan Excel rekap.
           # True = BTG mengikuti kolom asli stock.csv.
-          USE_REAL_BTG_FROM_CSV = False
+          USE_REAL_BTG_FROM_CSV = True
 
           data = OrderedDict()
           all_species = []
