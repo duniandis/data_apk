@@ -2,7 +2,7 @@ name: Sync pCloud Excel test -> stock.csv
 
 on:
   schedule:
-    - cron: "5 * * * *"   # tiap jam menit 05 (UTC)
+    - cron: "5 * * * *"
   workflow_dispatch: {}
 
 permissions:
@@ -27,7 +27,7 @@ jobs:
         run: |
           curl -fsSL https://rclone.org/install.sh | sudo bash
 
-      - name: Configure rclone (pCloud)
+      - name: Configure rclone pCloud
         env:
           PCLOUD_TOKEN: ${{ secrets.PCLOUD_TOKEN }}
         run: |
@@ -38,7 +38,7 @@ jobs:
             "token = ${PCLOUD_TOKEN}" \
             > ~/.config/rclone/rclone.conf
 
-      - name: Download Excel from pCloud (retry)
+      - name: Download Excel from pCloud
         run: |
           for i in 1 2 3 4 5; do
             echo "Attempt $i..."
@@ -70,7 +70,6 @@ jobs:
       - name: Stage and detect changes
         id: detect
         run: |
-          # pastikan file state ada agar git add tidak gagal
           test -f .sync_state_stock.json || echo "{}" > .sync_state_stock.json
 
           git add stock.csv .sync_state_stock.json
@@ -83,20 +82,18 @@ jobs:
             echo "Changed detected."
           fi
 
-      - name: Notify ntfy (only if changed)
+      - name: Notify ntfy only if changed
         if: steps.detect.outputs.changed == 'true'
         run: |
           python - <<'PY' > ntfy_message.txt
           import csv
-          from collections import defaultdict, OrderedDict
+          from collections import OrderedDict
           from datetime import datetime, timezone, timedelta
 
           CSV_FILE = "stock.csv"
           CLASSES = ["40-49", "50-59", "60-UP"]
           WITA = timezone(timedelta(hours=8))
 
-          # Kalau ingin BTG mengikuti angka asli dari kolom stock.csv, ubah ini menjadi True.
-          # False = tampilan seperti contoh Excel/gambar: setiap baris jenis+kelas dihitung 1 BTG.
           USE_REAL_BTG_FROM_CSV = False
 
           data = OrderedDict()
@@ -126,19 +123,26 @@ jobs:
                   kelas = (row.get("kelas_diameter") or "").strip()
                   jenis = (row.get("jenis") or "").strip()
 
-                  if not posisi or kelas == "TOTAL" or not jenis:
-                      latest_global = row.get("mutasi_terakhir_global") or latest_global
+                  if row.get("mutasi_terakhir_global"):
+                      latest_global = row.get("mutasi_terakhir_global")
+
+                  if not posisi or not jenis:
+                      continue
+                  if kelas == "TOTAL":
                       continue
                   if kelas not in CLASSES:
                       continue
 
-                  latest_global = row.get("mutasi_terakhir_global") or latest_global
                   add_species(jenis)
+
                   data.setdefault(posisi, OrderedDict())
-                  data[posisi].setdefault(jenis, {k: {"btg": 0, "vol": 0.0} for k in CLASSES})
+                  data[posisi].setdefault(jenis, {
+                      k: {"btg": 0, "vol": 0.0} for k in CLASSES
+                  })
 
                   btg = to_int(row.get("btg")) if USE_REAL_BTG_FROM_CSV else 1
                   vol = to_float(row.get("volume_m3"))
+
                   data[posisi][jenis][kelas]["btg"] += btg
                   data[posisi][jenis][kelas]["vol"] += vol
 
@@ -148,23 +152,6 @@ jobs:
                   "vol": sum(row[k]["vol"] for k in CLASSES),
               }
 
-          def cell(btg, vol, width=11):
-              if btg == 0 and abs(vol) < 0.00001:
-                  text = "-"
-              else:
-                  text = f"{btg}/{vol:.2f}"
-              return text.rjust(width)
-
-          def line_for(name, row):
-              total = sum_row(row)
-              return (
-                  f"{name[:12].ljust(12)}"
-                  f"{cell(row['40-49']['btg'], row['40-49']['vol'])}"
-                  f"{cell(row['50-59']['btg'], row['50-59']['vol'])}"
-                  f"{cell(row['60-UP']['btg'], row['60-UP']['vol'])}"
-                  f"{cell(total['btg'], total['vol'])}"
-              )
-
           def build_total_rows(rows):
               total = {k: {"btg": 0, "vol": 0.0} for k in CLASSES}
               for row in rows.values():
@@ -173,86 +160,94 @@ jobs:
                       total[k]["vol"] += row[k]["vol"]
               return total
 
-              def section(title, rows):
-                  out = []
-                  out.append(f"📍 {title}")
-                  out.append("")
-              
-                  for jenis in all_species:
-                      if jenis not in rows:
-                          continue
-              
-                      row = rows[jenis]
-                      total = sum_row(row)
-              
-                      out.append(jenis)
-                      for k in CLASSES:
-                          btg = row[k]["btg"]
-                          vol = row[k]["vol"]
-                          if btg == 0 and abs(vol) < 0.00001:
-                              out.append(f"• {k}: -")
-                          else:
-                              out.append(f"• {k}: {btg} btg | {vol:.2f} m³")
-              
-                      out.append(f"• Jumlah: {total['btg']} btg | {total['vol']:.2f} m³")
-                      out.append("")
-              
-                  total_row = build_total_rows(rows)
-                  total = sum_row(total_row)
-                  out.append(f"TOTAL {title}")
+          def add_species_block(out, jenis, row):
+              total = sum_row(row)
+              out.append(f"🌲 {jenis}")
+
+              for k in CLASSES:
+                  btg = row[k]["btg"]
+                  vol = row[k]["vol"]
+
+                  if btg == 0 and abs(vol) < 0.00001:
+                      out.append(f"• {k}: -")
+                  else:
+                      out.append(f"• {k}: {btg} btg | {vol:.2f} m³")
+
+              out.append(f"• Jumlah: {total['btg']} btg | {total['vol']:.2f} m³")
+              out.append("")
+
+          def section(title, rows):
+              out = []
+              out.append(f"📍 {title}")
+              out.append("")
+
+              for jenis in all_species:
+                  if jenis in rows:
+                      add_species_block(out, jenis, rows[jenis])
+
+              total_row = build_total_rows(rows)
+              total = sum_row(total_row)
+
+              out.append(f"✅ TOTAL {title}")
+              for k in CLASSES:
+                  out.append(f"• {k}: {total_row[k]['btg']} btg | {total_row[k]['vol']:.2f} m³")
+              out.append(f"• Jumlah: {total['btg']} btg | {total['vol']:.2f} m³")
+
+              return "\n".join(out)
+
+          grand = OrderedDict()
+          for jenis in all_species:
+              grand[jenis] = {k: {"btg": 0, "vol": 0.0} for k in CLASSES}
+
+          for rows in data.values():
+              for jenis, row in rows.items():
+                  grand.setdefault(jenis, {k: {"btg": 0, "vol": 0.0} for k in CLASSES})
                   for k in CLASSES:
-                      out.append(f"• {k}: {total_row[k]['btg']} btg | {total_row[k]['vol']:.2f} m³")
-                  out.append(f"• Jumlah: {total['btg']} btg | {total['vol']:.2f} m³")
-              
-                  return "\n".join(out)
-                  
-                  msg.append("📊 REKAP SELURUH LOKASI")
-                  msg.append("")
-                  
-                  for jenis, row in grand.items():
-                      total = sum_row(row)
-                      msg.append(jenis)
-                      for k in CLASSES:
-                          btg = row[k]["btg"]
-                          vol = row[k]["vol"]
-                          if btg == 0 and abs(vol) < 0.00001:
-                              msg.append(f"• {k}: -")
-                          else:
-                              msg.append(f"• {k}: {btg} btg | {vol:.2f} m³")
-                      msg.append(f"• Jumlah: {total['btg']} btg | {total['vol']:.2f} m³")
-                      msg.append("")
-                  
-                  grand_total = build_total_rows(grand)
-                  grand_sum = sum_row(grand_total)
-                  
-                  msg.append("TOTAL SEMUA")
-                  for k in CLASSES:
-                      msg.append(f"• {k}: {grand_total[k]['btg']} btg | {grand_total[k]['vol']:.2f} m³")
-                  msg.append(f"• Jumlah: {grand_sum['btg']} btg | {grand_sum['vol']:.2f} m³")
+                      grand[jenis][k]["btg"] += row[k]["btg"]
+                      grand[jenis][k]["vol"] += row[k]["vol"]
+
+          now = datetime.now(WITA).strftime("%d-%m-%Y %H:%M WITA")
+
+          msg = []
+          msg.append("📦 UPDATE STOCK KAYU BULAT")
+          msg.append(f"Dikirim: {now}")
+
+          if latest_global:
+              msg.append(f"Mutasi terakhir: {latest_global}")
+
+          msg.append("Format: BTG | Volume m³")
+          msg.append("")
 
           for posisi, rows in data.items():
               msg.append(section(posisi, rows))
               msg.append("")
+              msg.append("━━━━━━━━━━━━━━━━━━━━")
+              msg.append("")
 
-          msg.append("============== REKAP SELURUH LOKASI ==============")
-          msg.append("Jenis Kayu        40-49      50-59      60-UP     JUMLAH")
-          msg.append("--------------------------------------------------------")
+          msg.append("📊 REKAP SELURUH LOKASI")
+          msg.append("")
+
           for jenis, row in grand.items():
-              msg.append(line_for(jenis, row))
-          msg.append("--------------------------------------------------------")
-          msg.append(line_for("TOTAL", build_total_rows(grand)))
+              add_species_block(msg, jenis, row)
+
+          grand_total = build_total_rows(grand)
+          grand_sum = sum_row(grand_total)
+
+          msg.append("✅ TOTAL SEMUA")
+          for k in CLASSES:
+              msg.append(f"• {k}: {grand_total[k]['btg']} btg | {grand_total[k]['vol']:.2f} m³")
+          msg.append(f"• Jumlah: {grand_sum['btg']} btg | {grand_sum['vol']:.2f} m³")
 
           print("\n".join(msg))
           PY
 
-          curl -sS -X POST https://ntfy.sh/auto-stock-test \
-            -H "Title: 📦 Update Stock (internal WRS)" \
+          curl -sS -X POST https://ntfy.sh/auto-stock-notif \
+            -H "Title: 📦 Update Stock Kayu" \
             -H "Priority: 4" \
-            -H "Tags: stock,log,wood" \
-            -H "Markdown: yes" \
+            -H "Tags: wood,stock,package" \
             --data-binary @ntfy_message.txt
 
-      - name: Commit & push (only if changed)
+      - name: Commit and push only if changed
         if: steps.detect.outputs.changed == 'true'
         run: |
           git config user.name "github-actions[bot]"
