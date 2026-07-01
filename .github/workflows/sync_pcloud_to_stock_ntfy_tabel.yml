@@ -1,0 +1,243 @@
+name: Sync pCloud Excel -> stock.csv
+
+on:
+  schedule:
+    - cron: "5 * * * *"   # tiap jam menit 05 (UTC)
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-pcloud
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install rclone
+        run: |
+          curl -fsSL https://rclone.org/install.sh | sudo bash
+
+      - name: Configure rclone (pCloud)
+        env:
+          PCLOUD_TOKEN: ${{ secrets.PCLOUD_TOKEN }}
+        run: |
+          mkdir -p ~/.config/rclone
+          printf '%s\n' \
+            "[pcloud]" \
+            "type = pcloud" \
+            "token = ${PCLOUD_TOKEN}" \
+            > ~/.config/rclone/rclone.conf
+
+      - name: Download Excel from pCloud (retry)
+        run: |
+          for i in 1 2 3 4 5; do
+            echo "Attempt $i..."
+            rclone copyto \
+              "pcloud:TUK (CLOUD)/2026/INPUT ANGKUT DAN STOK POSISI/INPUT_ANGKUTAN_STOCK_NEW.xlsx" \
+              "./INPUT_ANGKUTAN_STOCK_NEW.xlsx" \
+              --retries 5 --low-level-retries 20 \
+              --stats 10s --stats-one-line && break
+            sleep $((i*10))
+          done
+          test -f INPUT_ANGKUTAN_STOCK_NEW.xlsx || (echo "ERROR: file not downloaded" && exit 1)
+          ls -lh INPUT_ANGKUTAN_STOCK_NEW.xlsx
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install openpyxl==3.1.5
+
+      - name: Export stock.csv
+        run: |
+          python tools/export_stock_csv.py
+          head -n 5 stock.csv || true
+
+      - name: Stage and detect changes
+        id: detect
+        run: |
+          # pastikan file state ada agar git add tidak gagal
+          test -f .sync_state_stock.json || echo "{}" > .sync_state_stock.json
+
+          git add stock.csv .sync_state_stock.json
+
+          if git diff --cached --quiet; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "No changes."
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "Changed detected."
+          fi
+
+      - name: Notify ntfy (only if changed)
+        if: steps.detect.outputs.changed == 'true'
+        run: |
+          python - <<'PY' > ntfy_message.txt
+          import csv
+          from collections import defaultdict, OrderedDict
+          from datetime import datetime, timezone, timedelta
+
+          CSV_FILE = "stock.csv"
+          CLASSES = ["40-49", "50-59", "60-UP"]
+          WITA = timezone(timedelta(hours=8))
+
+          # Kalau ingin BTG mengikuti angka asli dari kolom stock.csv, ubah ini menjadi True.
+          # False = tampilan seperti contoh Excel/gambar: setiap baris jenis+kelas dihitung 1 BTG.
+          USE_REAL_BTG_FROM_CSV = False
+
+          data = OrderedDict()
+          all_species = []
+          latest_global = ""
+
+          def add_species(name):
+              if name and name not in all_species:
+                  all_species.append(name)
+
+          def to_float(x):
+              try:
+                  return float(str(x).strip() or 0)
+              except Exception:
+                  return 0.0
+
+          def to_int(x):
+              try:
+                  return int(float(str(x).strip() or 0))
+              except Exception:
+                  return 0
+
+          with open(CSV_FILE, newline="", encoding="utf-8-sig") as f:
+              reader = csv.DictReader(f)
+              for row in reader:
+                  posisi = (row.get("posisi") or "").strip()
+                  kelas = (row.get("kelas_diameter") or "").strip()
+                  jenis = (row.get("jenis") or "").strip()
+
+                  if not posisi or kelas == "TOTAL" or not jenis:
+                      latest_global = row.get("mutasi_terakhir_global") or latest_global
+                      continue
+                  if kelas not in CLASSES:
+                      continue
+
+                  latest_global = row.get("mutasi_terakhir_global") or latest_global
+                  add_species(jenis)
+                  data.setdefault(posisi, OrderedDict())
+                  data[posisi].setdefault(jenis, {k: {"btg": 0, "vol": 0.0} for k in CLASSES})
+
+                  btg = to_int(row.get("btg")) if USE_REAL_BTG_FROM_CSV else 1
+                  vol = to_float(row.get("volume_m3"))
+                  data[posisi][jenis][kelas]["btg"] += btg
+                  data[posisi][jenis][kelas]["vol"] += vol
+
+          def sum_row(row):
+              return {
+                  "btg": sum(row[k]["btg"] for k in CLASSES),
+                  "vol": sum(row[k]["vol"] for k in CLASSES),
+              }
+
+          def cell(btg, vol, width=11):
+              if btg == 0 and abs(vol) < 0.00001:
+                  text = "-"
+              else:
+                  text = f"{btg}/{vol:.2f}"
+              return text.rjust(width)
+
+          def line_for(name, row):
+              total = sum_row(row)
+              return (
+                  f"{name[:12].ljust(12)}"
+                  f"{cell(row['40-49']['btg'], row['40-49']['vol'])}"
+                  f"{cell(row['50-59']['btg'], row['50-59']['vol'])}"
+                  f"{cell(row['60-UP']['btg'], row['60-UP']['vol'])}"
+                  f"{cell(total['btg'], total['vol'])}"
+              )
+
+          def build_total_rows(rows):
+              total = {k: {"btg": 0, "vol": 0.0} for k in CLASSES}
+              for row in rows.values():
+                  for k in CLASSES:
+                      total[k]["btg"] += row[k]["btg"]
+                      total[k]["vol"] += row[k]["vol"]
+              return total
+
+          def section(title, rows):
+              out = []
+              out.append(f"==================== {title} ====================")
+              out.append("Jenis Kayu        40-49      50-59      60-UP     JUMLAH")
+              out.append("--------------------------------------------------------")
+              for jenis in all_species:
+                  if jenis in rows:
+                      out.append(line_for(jenis, rows[jenis]))
+              out.append("--------------------------------------------------------")
+              out.append(line_for("TOTAL", build_total_rows(rows)))
+              return "\n".join(out)
+
+          # Rekap seluruh lokasi per jenis kayu
+          grand = OrderedDict()
+          for jenis in all_species:
+              grand[jenis] = {k: {"btg": 0, "vol": 0.0} for k in CLASSES}
+
+          for rows in data.values():
+              for jenis, row in rows.items():
+                  grand.setdefault(jenis, {k: {"btg": 0, "vol": 0.0} for k in CLASSES})
+                  for k in CLASSES:
+                      grand[jenis][k]["btg"] += row[k]["btg"]
+                      grand[jenis][k]["vol"] += row[k]["vol"]
+
+          now = datetime.now(WITA).strftime("%d-%m-%Y %H:%M WITA")
+          msg = []
+          msg.append("📦 UPDATE STOCK KAYU BULAT")
+          msg.append(f"Dikirim: {now}")
+          if latest_global:
+              msg.append(f"Mutasi terakhir: {latest_global}")
+          msg.append("Format: BTG/Volume m³")
+          msg.append("")
+
+          for posisi, rows in data.items():
+              msg.append(section(posisi, rows))
+              msg.append("")
+
+          msg.append("============== REKAP SELURUH LOKASI ==============")
+          msg.append("Jenis Kayu        40-49      50-59      60-UP     JUMLAH")
+          msg.append("--------------------------------------------------------")
+          for jenis, row in grand.items():
+              msg.append(line_for(jenis, row))
+          msg.append("--------------------------------------------------------")
+          msg.append(line_for("TOTAL", build_total_rows(grand)))
+
+          print("```")
+          print("\n".join(msg))
+          print("```")
+          PY
+
+          curl -sS -X POST https://ntfy.sh/auto-stock-test \
+            -H "Title: 📦 Update Stock (internal WRS)" \
+            -H "Priority: 4" \
+            -H "Tags: stock,log,wood" \
+            -H "Markdown: yes" \
+            --data-binary @ntfy_message.txt
+
+      - name: Commit & push (only if changed)
+        if: steps.detect.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add stock.csv .sync_state_stock.json
+          git commit -m "Auto update stock.csv" || echo "Nothing to commit"
+
+          git pull --rebase
+          git push
