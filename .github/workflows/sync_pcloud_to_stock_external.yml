@@ -86,7 +86,7 @@ jobs:
       - name: Notify ntfy (only if changed)
         if: steps.detect.outputs.changed == 'true'
         run: |
-          MSG="$(python tools/stock_to_message.py)"
+          MSG="$(python tools/stock_external_to_message.py)"
 
           curl -sS -X POST https://ntfy.sh/auto-stock-test \
             -H "Title: 📦 Update Stock (internal WRS)" \
