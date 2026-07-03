@@ -88,7 +88,7 @@ jobs:
         run: |
           MSG="$(python tools/stock_external_to_message.py)"
 
-          curl -sS -X POST https://ntfy.sh/auto-stock-test \
+          curl -sS -X POST https://ntfy.sh/auto-stock-notif \
             -H "Title:📦Update Stock External (Penjualan)" \
             -H "Priority: 4" \
             -H "Tags: stock,log,wood" \
