@@ -1,0 +1,107 @@
+name: Sync pCloud Excel -> stock_internal.csv
+
+on:
+  schedule:
+    - cron: "15 * * * *"   # tiap jam menit 15 (UTC)
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-pcloud
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install rclone
+        run: |
+          curl -fsSL https://rclone.org/install.sh | sudo bash
+
+      - name: Configure rclone (pCloud)
+        env:
+          PCLOUD_TOKEN: ${{ secrets.PCLOUD_TOKEN }}
+        run: |
+          mkdir -p ~/.config/rclone
+          printf '%s\n' \
+            "[pcloud]" \
+            "type = pcloud" \
+            "token = ${PCLOUD_TOKEN}" \
+            > ~/.config/rclone/rclone.conf
+
+      - name: Download Excel from pCloud (retry)
+        run: |
+          for i in 1 2 3 4 5; do
+            echo "Attempt $i..."
+            rclone copyto \
+              "pcloud:TUK (CLOUD)/2026/INPUT ANGKUT DAN STOK POSISI/INPUT_ANGKUTAN_STOCK_NEW.xlsx" \
+              "./INPUT_ANGKUTAN_STOCK_NEW.xlsx" \
+              --retries 5 --low-level-retries 20 \
+              --stats 10s --stats-one-line && break
+            sleep $((i*10))
+          done
+          test -f INPUT_ANGKUTAN_STOCK_NEW.xlsx || (echo "ERROR: file not downloaded" && exit 1)
+          ls -lh INPUT_ANGKUTAN_STOCK_NEW.xlsx
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install openpyxl==3.1.5
+
+      - name: Export stock_internal.csv
+        run: |
+          python tools/export_stock_internal_csv.py
+          head -n 5 stock_internal.csv || true
+
+      - name: Stage and detect changes
+        id: detect
+        run: |
+          # pastikan file state ada agar git add tidak gagal
+          test -f .sync_state_stock_internal.json || echo "{}" > .sync_state_stock_internal.json
+
+          git add stock_internal.csv .sync_state_stock_internal.json
+
+          if git diff --cached --quiet; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "No changes."
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "Changed detected."
+          fi
+
+      - name: Notify ntfy (only if changed)
+        if: steps.detect.outputs.changed == 'true'
+        run: |
+          MSG="$(python tools/stock_internal_to_message.py)"
+
+          curl -sS -X POST https://ntfy.sh/auto-stock-notif \
+            -H "Title:📦Update Stock internal (WRS)" \
+            -H "Priority: 4" \
+            -H "Tags: stock,log,wood" \
+            --data-binary "$MSG"
+
+      - name: Commit & push (only if changed)
+        if: steps.detect.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add stock.csv .sync_state_stock.json
+          git commit -m "Auto update stock.csv" || echo "Nothing to commit"
+
+          git pull --rebase
+          git push
