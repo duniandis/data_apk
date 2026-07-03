@@ -89,7 +89,7 @@ jobs:
           MSG="$(python tools/stock_external_to_message.py)"
 
           curl -sS -X POST https://ntfy.sh/auto-stock-test \
-            -H "Title: 📦 Update Stock (internal WRS)" \
+            -H "Title:📦Update Stock External (Penjualan)" \
             -H "Priority: 4" \
             -H "Tags: stock,log,wood" \
             --data-binary "$MSG"
