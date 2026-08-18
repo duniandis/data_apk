@@ -45,7 +45,7 @@ jobs:
           for i in 1 2 3 4 5; do
             echo "Attempt $i..."
             rclone copyto \
-              "pcloud:CLOUD SYNC\DEKSTOP\01 DATA CLOUD (UPDATE)\CV INU BATARA SEJAHTERA\TUK MUARA INU\DATA_KAYU_IBS\UKUR_MUTASI_LOG_IBS.xlsx" \
+              "pcloud:CLOUD SYNC/DEKSTOP/01 DATA CLOUD (UPDATE)/CV INU BATARA SEJAHTERA/TUK MUARA INU/DATA_KAYU_IBS/UKUR_MUTASI_LOG_IBS.xlsx" \
               "./UKUR_MUTASI_LOG_IBS.xlsx" \
               --retries 5 --low-level-retries 20 \
               --stats 10s --stats-one-line && break
