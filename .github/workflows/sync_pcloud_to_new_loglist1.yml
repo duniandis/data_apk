@@ -151,7 +151,7 @@ jobs:
       # GENERATE NEW LOGLIST1
       # =====================================================
 
-      - name: Generate new_loglist1.csv
+      - name: Generate loglist1.csv
         run: |
 
           echo "========================================="
@@ -161,9 +161,9 @@ jobs:
           python tools/export_new_loglist1.py
 
 
-          if [ ! -f "new_loglist1.csv" ]; then
+          if [ ! -f "loglist1.csv" ]; then
 
-            echo "ERROR: new_loglist1.csv tidak dibuat."
+            echo "ERROR: loglist1.csv tidak dibuat."
 
             exit 1
 
@@ -175,26 +175,26 @@ jobs:
           echo "HASIL NEW LOGLIST1"
           echo "========================================="
 
-          ls -lh new_loglist1.csv
+          ls -lh loglist1.csv
 
 
           echo ""
           echo "Jumlah baris:"
 
-          wc -l new_loglist1.csv
+          wc -l loglist1.csv
 
 
           echo ""
           echo "Header + 4 data pertama:"
 
-          head -n 5 new_loglist1.csv
+          head -n 5 loglist1.csv
 
 
       # =====================================================
       # COMMIT
       # =====================================================
 
-      - name: Commit new_loglist1.csv
+      - name: Commit loglist1.csv
         run: |
 
           git config user.name "github-actions[bot]"
@@ -203,7 +203,7 @@ jobs:
             "github-actions[bot]@users.noreply.github.com"
 
 
-          git add new_loglist1.csv
+          git add loglist1.csv
 
 
           # Tidak ada perubahan
@@ -212,7 +212,7 @@ jobs:
 
             echo ""
             echo "========================================="
-            echo "new_loglist1.csv TIDAK BERUBAH"
+            echo "loglist1.csv TIDAK BERUBAH"
             echo "Tidak perlu commit."
             echo "========================================="
 
@@ -231,7 +231,7 @@ jobs:
 
 
           git commit \
-            -m "Auto update new_loglist1.csv"
+            -m "Auto update loglist1.csv"
 
 
           # Ambil perubahan terbaru repository
@@ -245,5 +245,5 @@ jobs:
 
           echo ""
           echo "========================================="
-          echo "new_loglist1.csv BERHASIL DIUPDATE"
+          echo "loglist1.csv BERHASIL DIUPDATE"
           echo "========================================="
