@@ -8,21 +8,21 @@ from openpyxl import load_workbook
 XLSX = "INPUT_ANGKUTAN_STOCK_NEW.xlsx"
 SHEET = "POSISI TERAKHIR"
 
-# Kolom posisi terakhir
+# Kolom posisi terakhir ada di T
 POSITION_COL = 20  # T
 
 # Output AH sampai AQ
 OUT_MIN_COL = 34   # AH
 OUT_MAX_COL = 43   # AQ
 
-# Supaya posisi T dan data AH:AQ bisa dibaca sekaligus
+# Supaya bisa membaca posisi T sekaligus data AH:AQ
 READ_MIN_COL = 20  # T
 READ_MAX_COL = 43  # AQ
 
+# Baris 3 adalah header
 MIN_ROW = 3
-MAX_ROW = 20000
 
-# OUTPUT BARU - tidak menyentuh loglist1.csv lama
+# Output tetap loglist1.csv
 OUT_CSV = "loglist1.csv"
 
 
@@ -32,7 +32,7 @@ OUT_CSV = "loglist1.csv"
 
 def cell_str(value):
     """
-    Rapikan nilai cell sebelum ditulis ke CSV.
+    Merapikan nilai cell sebelum ditulis ke CSV.
     """
     if value is None:
         return ""
@@ -50,7 +50,7 @@ def cell_str(value):
 
 def is_invalid_nobtg(value):
     """
-    Abaikan baris jika nomor batang kosong / nol.
+    Abaikan baris jika noBtg kosong atau 0.
     """
     if value is None:
         return True
@@ -65,12 +65,10 @@ def is_invalid_nobtg(value):
 
 def should_skip_posisi(value):
     """
-    Tidak dimasukkan ke loglist jika posisi terakhir:
-
+    Skip data jika posisi terakhir:
     - DKDS
     - mengandung kata MILIR
     """
-
     if value is None:
         return False
 
@@ -123,8 +121,12 @@ def main():
 
     ws = wb[SHEET]
 
+    print(f"Baris terakhir sheet terdeteksi : {ws.max_row}")
+    print(f"Kolom terakhir sheet terdeteksi : {ws.max_column}")
+    print()
+
     # -----------------------------------------------------
-    # Posisi array output AH:AQ terhadap T:AQ
+    # Posisi AH:AQ di dalam range T:AQ
     # -----------------------------------------------------
 
     out_start = OUT_MIN_COL - READ_MIN_COL
@@ -135,7 +137,7 @@ def main():
     )
 
     # -----------------------------------------------------
-    # Counter debug
+    # Counter
     # -----------------------------------------------------
 
     total_excel = 0
@@ -161,7 +163,6 @@ def main():
         for row_number, row in enumerate(
             ws.iter_rows(
                 min_row=MIN_ROW,
-                max_row=MAX_ROW,
                 min_col=READ_MIN_COL,
                 max_col=READ_MAX_COL,
                 values_only=True
@@ -172,7 +173,7 @@ def main():
             # Kolom T
             posisi_raw = row[0]
 
-            # AH:AQ
+            # AH sampai AQ
             out_row = row[out_start:out_end]
 
             # =================================================
@@ -193,7 +194,7 @@ def main():
             nobtg_raw = out_row[0]
 
             # =================================================
-            # FILTER NOMOR BATANG
+            # FILTER noBtg
             # =================================================
 
             if is_invalid_nobtg(nobtg_raw):
