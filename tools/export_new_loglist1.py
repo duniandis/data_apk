@@ -23,7 +23,7 @@ MIN_ROW = 3
 MAX_ROW = 10000
 
 # OUTPUT BARU - tidak menyentuh loglist1.csv lama
-OUT_CSV = "new_loglist1.csv"
+OUT_CSV = "loglist1.csv"
 
 
 # =========================================================
