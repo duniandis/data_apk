@@ -20,7 +20,7 @@ READ_MIN_COL = 20  # T
 READ_MAX_COL = 43  # AQ
 
 MIN_ROW = 3
-MAX_ROW = 10000
+MAX_ROW = 20000
 
 # OUTPUT BARU - tidak menyentuh loglist1.csv lama
 OUT_CSV = "loglist1.csv"
