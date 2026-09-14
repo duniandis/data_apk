@@ -1,0 +1,249 @@
+name: Sync pCloud Excel -> new loglist1.csv
+
+on:
+  schedule:
+    # Setiap jam menit 20 UTC
+    # = setiap jam menit 20, sekitar WIB +7 jam
+    - cron: "20 * * * *"
+
+  # Bisa dijalankan manual dari tab Actions
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+# KHUSUS NEW LOGLIST1
+# Tidak bergabung dengan workflow sync-pcloud lama.
+concurrency:
+  group: sync-pcloud-new-loglist1
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+
+      # =====================================================
+      # CHECKOUT
+      # =====================================================
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+
+      # =====================================================
+      # RCLOUD / PCLOUD
+      # =====================================================
+
+      - name: Install rclone
+        run: |
+          curl -fsSL https://rclone.org/install.sh | sudo bash
+
+
+      - name: Configure rclone pCloud
+        env:
+          PCLOUD_TOKEN: ${{ secrets.PCLOUD_TOKEN }}
+        run: |
+          mkdir -p ~/.config/rclone
+
+          cat > ~/.config/rclone/rclone.conf <<EOF
+          [pcloud]
+          type = pcloud
+          token = ${PCLOUD_TOKEN}
+          EOF
+
+
+      # =====================================================
+      # DOWNLOAD EXCEL
+      # =====================================================
+
+      - name: Download latest Excel from pCloud
+        run: |
+
+          echo "========================================="
+          echo "DOWNLOAD EXCEL DARI PCLOUD"
+          echo "========================================="
+
+          success=0
+
+          for i in 1 2 3 4 5
+          do
+
+            echo ""
+            echo "Percobaan download ke-$i..."
+
+            if rclone copyto \
+              "pcloud:TUK (CLOUD)/2026/INPUT ANGKUT DAN STOK POSISI/INPUT_ANGKUTAN_STOCK_NEW.xlsx" \
+              "./INPUT_ANGKUTAN_STOCK_NEW.xlsx" \
+              --retries 5 \
+              --low-level-retries 20 \
+              --stats 10s \
+              --stats-one-line
+            then
+
+              success=1
+
+              echo "Download berhasil."
+
+              break
+
+            fi
+
+            echo "Download gagal. Coba lagi..."
+
+            sleep $((i * 10))
+
+          done
+
+
+          if [ "$success" -ne 1 ]; then
+
+            echo "ERROR: Excel gagal didownload setelah 5 percobaan."
+
+            exit 1
+
+          fi
+
+
+          if [ ! -f "INPUT_ANGKUTAN_STOCK_NEW.xlsx" ]; then
+
+            echo "ERROR: File Excel tidak ditemukan."
+
+            exit 1
+
+          fi
+
+
+          echo ""
+          echo "========================================="
+          echo "FILE EXCEL"
+          echo "========================================="
+
+          ls -lh INPUT_ANGKUTAN_STOCK_NEW.xlsx
+
+          echo ""
+
+          sha256sum INPUT_ANGKUTAN_STOCK_NEW.xlsx
+
+
+      # =====================================================
+      # PYTHON
+      # =====================================================
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+
+          pip install openpyxl==3.1.5
+
+
+      # =====================================================
+      # GENERATE NEW LOGLIST1
+      # =====================================================
+
+      - name: Generate new_loglist1.csv
+        run: |
+
+          echo "========================================="
+          echo "GENERATE NEW LOGLIST1"
+          echo "========================================="
+
+          python tools/export_new_loglist1.py
+
+
+          if [ ! -f "new_loglist1.csv" ]; then
+
+            echo "ERROR: new_loglist1.csv tidak dibuat."
+
+            exit 1
+
+          fi
+
+
+          echo ""
+          echo "========================================="
+          echo "HASIL NEW LOGLIST1"
+          echo "========================================="
+
+          ls -lh new_loglist1.csv
+
+
+          echo ""
+          echo "Jumlah baris:"
+
+          wc -l new_loglist1.csv
+
+
+          echo ""
+          echo "Header + 4 data pertama:"
+
+          head -n 5 new_loglist1.csv
+
+
+      # =====================================================
+      # COMMIT
+      # =====================================================
+
+      - name: Commit new_loglist1.csv
+        run: |
+
+          git config user.name "github-actions[bot]"
+
+          git config user.email \
+            "github-actions[bot]@users.noreply.github.com"
+
+
+          git add new_loglist1.csv
+
+
+          # Tidak ada perubahan
+          if git diff --cached --quiet
+          then
+
+            echo ""
+            echo "========================================="
+            echo "new_loglist1.csv TIDAK BERUBAH"
+            echo "Tidak perlu commit."
+            echo "========================================="
+
+            exit 0
+
+          fi
+
+
+          echo ""
+          echo "========================================="
+          echo "ADA PERUBAHAN NEW LOGLIST1"
+          echo "========================================="
+
+
+          git status --short
+
+
+          git commit \
+            -m "Auto update new_loglist1.csv"
+
+
+          # Ambil perubahan terbaru repository
+          # sebelum push agar lebih tahan konflik.
+
+          git pull --rebase
+
+
+          git push
+
+
+          echo ""
+          echo "========================================="
+          echo "new_loglist1.csv BERHASIL DIUPDATE"
+          echo "========================================="
