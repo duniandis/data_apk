@@ -15,7 +15,7 @@ READ_MAX_COL = 43  # AQ
 
 # ROWS
 MIN_ROW = 3        # pastikan ini baris header kamu (kalau header di row 2)
-MAX_ROW = 10000
+MAX_ROW = 30000
 
 OUT_CSV = "loglist1.csv"
 STATE = ".sync_state_loglist1.json"
