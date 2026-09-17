@@ -8,7 +8,7 @@ SHEET = "POSISI TERAKHIR"
 
 # baris data dimulai dari row 3 (sesuaikan kalau header kamu di row 3)
 MIN_ROW = 3
-MAX_ROW = 10000
+MAX_ROW = 30000
 
 # Kolom (1-based)
 COL_NOBTG  = 2   # B
