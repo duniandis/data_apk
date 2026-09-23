@@ -12,7 +12,7 @@ MAX_ROW = 10000
 
 # Kolom (1-based)
 COL_NOBTG  = 2   # B
-COL_JENIS  = 7   # H
+COL_JENIS  = 8   # G
 COL_VOL    = 32  # AB
 COL_KELAS  = 18  # R
 COL_TGL    = 19  # S
