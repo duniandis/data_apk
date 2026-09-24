@@ -83,17 +83,6 @@ jobs:
             echo "Changed detected."
           fi
 
-      - name: Notify ntfy (only if changed)
-        if: steps.detect.outputs.changed == 'true'
-        run: |
-          MSG="$(python tools/stock_external_to_message.py)"
-
-          curl -sS -X POST https://ntfy.sh/auto-stock-notif \
-            -H "Title:📦Update Stock Extern (Penjualan)" \
-            -H "Priority: 4" \
-            -H "Tags: stock,log,wood" \
-            -H "Actions: view, Lihat Detail Stock, https://duniandis.github.io/stock_kayu_wiki_barut/" \
-            --data-binary "$MSG"
 
       - name: Commit & push (only if changed)
         if: steps.detect.outputs.changed == 'true'
@@ -106,3 +95,23 @@ jobs:
 
           git pull --rebase
           git push
+
+
+      - name: Wait 10 minutes before notification
+        if: steps.detect.outputs.changed == 'true'
+        run: |
+          echo "Menunggu 10 menit setelah git push..."
+          sleep 600
+
+
+      - name: Notify ntfy (only if changed)
+        if: steps.detect.outputs.changed == 'true'
+        run: |
+          MSG="$(python tools/stock_external_to_message.py)"
+
+          curl -sS -X POST https://ntfy.sh/auto-stock-notif \
+            -H "Title:📦Update Stock Extern (Penjualan)" \
+            -H "Priority: 4" \
+            -H "Tags: stock,log,wood" \
+            -H "Actions: view, Lihat Detail Stock, https://duniandis.github.io/stock_kayu_wiki_barut/" \
+            --data-binary "$MSG"
