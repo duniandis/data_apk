@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: sync-pcloud
+  group: sync-pcloud-stock-external
   cancel-in-progress: false
 
 jobs:
