@@ -2,7 +2,7 @@ name: Sync pCloud Excel -> stock.csv
 
 on:
   schedule:
-    - cron: "5 * * * *"
+    - cron: "5 * * * *"   # tiap jam menit 5 (UTC)
   workflow_dispatch: {}
 
 permissions:
@@ -27,7 +27,7 @@ jobs:
         run: |
           curl -fsSL https://rclone.org/install.sh | sudo bash
 
-      - name: Configure rclone pCloud
+      - name: Configure rclone (pCloud)
         env:
           PCLOUD_TOKEN: ${{ secrets.PCLOUD_TOKEN }}
         run: |
@@ -38,7 +38,7 @@ jobs:
             "token = ${PCLOUD_TOKEN}" \
             > ~/.config/rclone/rclone.conf
 
-      - name: Download Excel from pCloud
+      - name: Download Excel from pCloud (retry)
         run: |
           for i in 1 2 3 4 5; do
             echo "Attempt $i..."
@@ -49,7 +49,6 @@ jobs:
               --stats 10s --stats-one-line && break
             sleep $((i*10))
           done
-
           test -f INPUT_ANGKUTAN_STOCK_NEW.xlsx || (echo "ERROR: file not downloaded" && exit 1)
           ls -lh INPUT_ANGKUTAN_STOCK_NEW.xlsx
 
@@ -71,7 +70,9 @@ jobs:
       - name: Stage and detect changes
         id: detect
         run: |
+          # pastikan file state ada agar git add tidak gagal
           test -f .sync_state_stock.json || echo "{}" > .sync_state_stock.json
+
           git add stock.csv .sync_state_stock.json
 
           if git diff --cached --quiet; then
@@ -82,184 +83,19 @@ jobs:
             echo "Changed detected."
           fi
 
-      - name: Notify ntfy only if changed
+      - name: Notify ntfy (only if changed)
         if: steps.detect.outputs.changed == 'true'
         run: |
-          python - <<'PY' > ntfy_all.txt
-          import csv
-          from collections import OrderedDict
-          from datetime import datetime, timezone, timedelta
+          MSG="$(python tools/stock_to_message.py)"
 
-          CSV_FILE = "stock.csv"
-          CLASSES = ["40-49", "50-59", "60-UP"]
-          WITA = timezone(timedelta(hours=8))
-          USE_REAL_BTG_FROM_CSV = True
+          curl -sS -X POST https://ntfy.sh/auto-stock-notif \
+            -H "Title:📦Update Stock internal (WRS)" \
+            -H "Priority: 4" \
+            -H "Tags: stock,log,wood" \
+            -H "Actions: view, Lihat Detail Stock, https://duniandis.github.io/stock_kayu_wiki/" \
+            --data-binary "$MSG"
 
-          data = OrderedDict()
-          all_species = []
-          latest_global = ""
-
-          def add_species(name):
-              if name and name not in all_species:
-                  all_species.append(name)
-
-          def to_float(x):
-              try:
-                  return float(str(x).strip() or 0)
-              except Exception:
-                  return 0.0
-
-          def to_int(x):
-              try:
-                  return int(float(str(x).strip() or 0))
-              except Exception:
-                  return 0
-
-          with open(CSV_FILE, newline="", encoding="utf-8-sig") as f:
-              reader = csv.DictReader(f)
-              for row in reader:
-                  posisi = (row.get("posisi") or "").strip()
-                  kelas = (row.get("kelas_diameter") or "").strip()
-                  jenis = (row.get("jenis") or "").strip()
-
-                  if row.get("mutasi_terakhir_global"):
-                      latest_global = row.get("mutasi_terakhir_global")
-
-                  if not posisi or not jenis:
-                      continue
-                  if kelas == "TOTAL":
-                      continue
-                  if kelas not in CLASSES:
-                      continue
-
-                  add_species(jenis)
-                  data.setdefault(posisi, OrderedDict())
-                  data[posisi].setdefault(
-                      jenis,
-                      {k: {"btg": 0, "vol": 0.0} for k in CLASSES}
-                  )
-
-                  btg = to_int(row.get("btg")) if USE_REAL_BTG_FROM_CSV else 1
-                  vol = to_float(row.get("volume_m3"))
-
-                  data[posisi][jenis][kelas]["btg"] += btg
-                  data[posisi][jenis][kelas]["vol"] += vol
-
-          def sum_row(row):
-              return {
-                  "btg": sum(row[k]["btg"] for k in CLASSES),
-                  "vol": sum(row[k]["vol"] for k in CLASSES),
-              }
-
-          def build_total_rows(rows):
-              total = {k: {"btg": 0, "vol": 0.0} for k in CLASSES}
-              for row in rows.values():
-                  for k in CLASSES:
-                      total[k]["btg"] += row[k]["btg"]
-                      total[k]["vol"] += row[k]["vol"]
-              return total
-
-          def add_species_block(out, jenis, row):
-              total = sum_row(row)
-              out.append(f"🌲 {jenis}")
-
-              for k in CLASSES:
-                  btg = row[k]["btg"]
-                  vol = row[k]["vol"]
-
-                  if btg == 0 and abs(vol) < 0.00001:
-                      out.append(f"• {k}: -")
-                  else:
-                      out.append(f"• {k}: {btg} btg | {vol:.2f} m³")
-
-              out.append(f"• Jumlah: {total['btg']} btg | {total['vol']:.2f} m³")
-              out.append("")
-
-          def section(title, rows):
-              out = []
-              out.append(f"📍 {title}")
-              out.append("")
-
-              for jenis in all_species:
-                  if jenis in rows:
-                      add_species_block(out, jenis, rows[jenis])
-
-              total_row = build_total_rows(rows)
-              total = sum_row(total_row)
-
-              out.append(f"✅ TOTAL {title}")
-              for k in CLASSES:
-                  out.append(
-                      f"• {k}: {total_row[k]['btg']} btg | {total_row[k]['vol']:.2f} m³"
-                  )
-              out.append(f"• Jumlah: {total['btg']} btg | {total['vol']:.2f} m³")
-              return "\n".join(out)
-
-          grand = OrderedDict()
-          for jenis in all_species:
-              grand[jenis] = {k: {"btg": 0, "vol": 0.0} for k in CLASSES}
-
-          for rows in data.values():
-              for jenis, row in rows.items():
-                  grand.setdefault(jenis, {k: {"btg": 0, "vol": 0.0} for k in CLASSES})
-                  for k in CLASSES:
-                      grand[jenis][k]["btg"] += row[k]["btg"]
-                      grand[jenis][k]["vol"] += row[k]["vol"]
-
-          grand_total = build_total_rows(grand)
-          grand_sum = sum_row(grand_total)
-
-          now = datetime.now(WITA).strftime("%d-%m-%Y %H:%M WITA")
-
-          header = [
-              "📦 UPDATE STOCK KAYU BULAT",
-          ]
-
-          if latest_global:
-              header.append(f"Mutasi terakhir: {latest_global}")
-          header.append("")
-
-          chunks = []
-
-          for posisi, rows in data.items():
-              chunks.append(header + [section(posisi, rows)])
-
-          rekap = []
-          rekap.append("📊 REKAP SELURUH LOKASI")
-          rekap.append("")
-
-          for jenis, row in grand.items():
-              add_species_block(rekap, jenis, row)
-
-          rekap.append("✅ TOTAL SEMUA")
-          for k in CLASSES:
-              rekap.append(
-                  f"• {k}: {grand_total[k]['btg']} btg | {grand_total[k]['vol']:.2f} m³"
-              )
-          rekap.append(f"• Jumlah: {grand_sum['btg']} btg | {grand_sum['vol']:.2f} m³")
-
-          chunks.append(header + rekap)
-
-          for i, chunk in enumerate(chunks, start=1):
-              print("\n".join(chunk))
-              if i != len(chunks):
-                  print("\n---NTFY-SPLIT---\n")
-          PY
-
-          awk 'BEGIN{RS="---NTFY-SPLIT---"} NF{gsub(/^[ \n]+|[ \n]+$/, ""); print > ("ntfy_part_" NR ".txt")}' ntfy_all.txt
-
-          for f in ntfy_part_*.txt; do
-            echo "Sending $f ..."
-            curl -sS -X POST https://ntfy.sh/auto-stock-notif \
-              -H "Priority: 4" \
-              -H "Tags: wood,stock,package" \
-              -H "Content-Type: text/plain; charset=utf-8" \
-              --data-binary @"$f"
-            echo
-            sleep 1
-          done
-
-      - name: Commit and push only if changed
+      - name: Commit & push (only if changed)
         if: steps.detect.outputs.changed == 'true'
         run: |
           git config user.name "github-actions[bot]"
