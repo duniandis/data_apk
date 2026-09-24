@@ -89,7 +89,7 @@ jobs:
           MSG="$(python tools/stock_to_message.py)"
 
           curl -sS -X POST https://ntfy.sh/auto-stock-notif \
-            -H "Title:📦Update Stock (WRS)" \
+            -H "Title:📦Update Stock Extern (Penjualan)" \
             -H "Priority: 4" \
             -H "Tags: stock,log,wood" \
             -H "Actions: view, Lihat Detail Stock, https://duniandis.github.io/stock_kayu_wiki_barut/" \
