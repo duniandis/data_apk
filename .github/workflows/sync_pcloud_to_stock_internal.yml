@@ -101,8 +101,8 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git add stock_internal.csv .sync_state_stock.json
-          git commit -m "Auto update stock.csv" || echo "Nothing to commit"
+          git add stock_internal.csv .sync_state_stock_internal.json
+          git commit -m "Auto update stock_internal.csv" || echo "Nothing to commit"
 
           git pull --rebase
           git push
