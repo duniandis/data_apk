@@ -65,8 +65,8 @@ jobs:
           python tools/stock_olahan_ibs_to_message.py > notification.txt
 
           curl --fail-with-body --retry 3 -sS -X POST \
-            "https://ntfy.sh/auto-stock-olahan-ibs" \
-            -H 'Title: Update Stock Olahan IBS' \
+            "https://ntfy.sh/auto-stock-ibs" \
+            -H 'Title: Update Stock Dokument Olahan IBS' \
             -H 'Priority: 4' \
             -H 'Tags: wood,package' \
             -H 'Actions: view, Lihat Detail, https://duniandis.github.io/stock_kayu_olahan_ibs/' \
