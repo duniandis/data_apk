@@ -61,12 +61,11 @@ jobs:
         run: sleep 600
       - name: Send summary and detail button to ntfy
         if: steps.changes.outputs.changed == 'true'
-        env:
-          NTFY_TOPIC: ${{ vars.NTFY_OLAHAN_TOPIC }}
         run: |
-          TOPIC="${NTFY_TOPIC:-auto-stock-olahan-ibs}"
           python tools/stock_olahan_ibs_to_message.py > notification.txt
-          curl --fail-with-body --retry 3 -sS -X POST "https://ntfy.sh/${TOPIC}" \
+
+          curl --fail-with-body --retry 3 -sS -X POST \
+            "https://ntfy.sh/auto-stock-olahan-ibs" \
             -H 'Title: Update Stock Olahan IBS' \
             -H 'Priority: 4' \
             -H 'Tags: wood,package' \
