@@ -1,0 +1,73 @@
+name: Sync pCloud Excel to stock_olahan_ibs.csv
+on:
+  schedule:
+    - cron: '37 * * * *'
+  workflow_dispatch: {}
+permissions:
+  contents: write
+concurrency:
+  group: sync-pcloud-stock-olahan-ibs
+  cancel-in-progress: false
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install rclone
+        run: curl -fsSL https://rclone.org/install.sh | sudo bash
+      - name: Configure pCloud
+        env:
+          PCLOUD_TOKEN: ${{ secrets.PCLOUD_TOKEN }}
+        run: |
+          test -n "$PCLOUD_TOKEN" || { echo 'PCLOUD_TOKEN missing'; exit 1; }
+          mkdir -p ~/.config/rclone
+          printf '%s\n' '[pcloud]' 'type = pcloud' "token = ${PCLOUD_TOKEN}" > ~/.config/rclone/rclone.conf
+      - name: Download source Excel
+        env:
+          SOURCE_PATH: ${{ vars.PCLOUD_OLAHAN_XLSX_PATH }}
+        run: |
+          test -n "$SOURCE_PATH" || { echo 'Set repository variable PCLOUD_OLAHAN_XLSX_PATH to full pCloud path'; exit 1; }
+          for i in 1 2 3 4 5; do
+            rclone copyto "pcloud:${SOURCE_PATH}" './data ukur LHP IBS.xlsx' --retries 5 --low-level-retries 20 && break
+            sleep $((i*10))
+          done
+          test -s 'data ukur LHP IBS.xlsx'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Export CSV
+        run: |
+          pip install openpyxl==3.1.5
+          python tools/export_stock_olahan_ibs_csv.py
+      - name: Detect changes
+        id: changes
+        run: |
+          git add stock_olahan_ibs.csv
+          if git diff --cached --quiet; then echo 'changed=false' >> "$GITHUB_OUTPUT"; else echo 'changed=true' >> "$GITHUB_OUTPUT"; fi
+      - name: Commit and push
+        if: steps.changes.outputs.changed == 'true'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Auto update stock_olahan_ibs.csv'
+          git pull --rebase
+          git push
+      - name: Wait for GitHub Pages
+        if: steps.changes.outputs.changed == 'true'
+        run: sleep 600
+      - name: Send summary and detail button to ntfy
+        if: steps.changes.outputs.changed == 'true'
+        env:
+          NTFY_TOPIC: ${{ vars.NTFY_OLAHAN_TOPIC }}
+        run: |
+          TOPIC="${NTFY_TOPIC:-auto-stock-olahan-ibs}"
+          python tools/stock_olahan_ibs_to_message.py > notification.txt
+          curl --fail-with-body --retry 3 -sS -X POST "https://ntfy.sh/${TOPIC}" \
+            -H 'Title: Update Stock Olahan IBS' \
+            -H 'Priority: 4' \
+            -H 'Tags: wood,package' \
+            -H 'Actions: view, Lihat Detail, https://duniandis.github.io/stock_kayu_olahan_ibs/' \
+            --data-binary @notification.txt
