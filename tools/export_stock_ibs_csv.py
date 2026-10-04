@@ -109,9 +109,9 @@ def should_skip_posisi(posisi_raw) -> bool:
     s = norm_str(posisi_raw).upper()
     if not s:
         return True
-    if s == "XXXXX": // ISI POSISI YANG MAU DIHILANGKAN DARI LOGLIST
+    if s == "XXXXX": #ISI POSISI YANG MAU DIHILANGKAN DARI LOGLIST
         return True
-    if "YG MAU TIDAK DITAMPILKAN" in s: // ISI POSISI YANG MAU DIHILANGKAN DARI LOGLIST
+    if "YG MAU TIDAK DITAMPILKAN" in s: #ISI POSISI YANG MAU DIHILANGKAN DARI LOGLIST
         return True
     return False
 
