@@ -1,0 +1,91 @@
+name: Sync pCloud Excel to stock_lhp_wiki.csv
+
+on:
+  schedule:
+    - cron: '47 * * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-pcloud-stock-lhp-wiki
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install rclone
+        run: curl -fsSL https://rclone.org/install.sh | sudo bash
+
+      - name: Configure pCloud
+        env:
+          PCLOUD_TOKEN: ${{ secrets.PCLOUD_TOKEN }}
+        run: |
+          test -n "$PCLOUD_TOKEN" || { echo 'PCLOUD_TOKEN missing'; exit 1; }
+          mkdir -p ~/.config/rclone
+          printf '%s\n' '[pcloud]' 'type = pcloud' "token = ${PCLOUD_TOKEN}" > ~/.config/rclone/rclone.conf
+
+      - name: Download source Excel
+        run: |
+          for i in 1 2 3 4 5; do
+            echo "Download attempt $i"
+            rclone copyto \
+              "pcloud:CLOUD SYNC/DEKSTOP/01 DATA CLOUD (UPDATE)/PT WIKI/2026/03 PENGANGKUTAN_PENERIMAAN/INPUT ANGKUTAN DOKUMENT 2026.xlsx" \
+              "./INPUT ANGKUTAN DOKUMENT 2026.xlsx" \
+              --retries 5 --low-level-retries 20 && break
+            sleep $((i*10))
+          done
+          test -s "INPUT ANGKUTAN DOKUMENT 2026.xlsx"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Export CSV
+        run: |
+          pip install openpyxl==3.1.5
+          python tools/export_stock_lhp_wiki.py
+
+      - name: Detect changes
+        id: changes
+        run: |
+          git add stock_lhp_wiki.csv
+          if git diff --cached --quiet; then
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+          else
+            echo 'changed=true' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit and push
+        if: steps.changes.outputs.changed == 'true'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Auto update stock_lhp_wiki.csv'
+          git pull --rebase
+          git push
+
+      - name: Wait for GitHub Pages
+        if: steps.changes.outputs.changed == 'true'
+        run: sleep 600
+
+      - name: Send ntfy notification
+        if: steps.changes.outputs.changed == 'true'
+        run: |
+          python tools/stock_lhp_wiki_to_message.py > notification.txt
+
+          curl --fail-with-body --retry 3 -sS -X POST \
+            "https://ntfy.sh/stock-lhp-wiki" \
+            -H 'Title: Update Stock LHP PT WIKI' \
+            -H 'Priority: 4' \
+            -H 'Tags: wood,package' \
+            -H 'Actions: view, Lihat Detail, https://duniandis.github.io/stock_lhp_wiki/' \
+            --data-binary @notification.txt
