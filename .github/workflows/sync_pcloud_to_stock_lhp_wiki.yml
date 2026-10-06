@@ -83,7 +83,7 @@ jobs:
           python tools/stock_lhp_wiki_to_message.py > notification.txt
 
           curl --fail-with-body --retry 3 -sS -X POST \
-            "https://ntfy.sh/stock-lhp-wiki" \
+            "https://ntfy.sh/auto-stock-notif" \
             -H 'Title: Update Stock LHP PT WIKI' \
             -H 'Priority: 4' \
             -H 'Tags: wood,package' \
