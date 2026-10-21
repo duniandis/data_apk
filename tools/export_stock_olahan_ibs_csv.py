@@ -48,21 +48,21 @@ def main():
     os.replace(OUTPUT + '.tmp', OUTPUT)
     # Optional PHAT sheet: export exact N1:AK54 as JSON, preserving 54 x 24 grid.
     phat_file='monitoring_phat_ibs.json'
-    if 'RKP-LHP' in wb.sheetnames:
-        phat=wb['RKP-LHP']
+    if 'RKP-RLHP' in wb.sheetnames:
+        phat=wb['RKP-RLHP']
         def serial(v):
             if isinstance(v,(datetime,date)):return v.isoformat()
             if isinstance(v,Decimal):return float(v)
             return v
         rows=[[serial(v) for v in row] for row in phat.iter_rows(min_row=1,max_row=54,min_col=14,max_col=37,values_only=True)]
         with open(phat_file+'.tmp','w',encoding='utf-8') as f:
-            json.dump({'source':'RKP-LHP!N1:AK54','updated_at':datetime.now().astimezone().isoformat(timespec='seconds'),'rows':rows},f,ensure_ascii=False,default=str)
+            json.dump({'source':'RKP-RLHP!N1:AK54','updated_at':datetime.now().astimezone().isoformat(timespec='seconds'),'rows':rows},f,ensure_ascii=False,default=str)
         os.replace(phat_file+'.tmp',phat_file)
         print('Monitoring PHAT exported:',phat_file)
     else:
         # Remove stale PHAT data when source sheet is absent.
         if os.path.exists(phat_file):os.remove(phat_file)
-        print('INFO: Sheet RKP-LHP tidak ada; Monitoring PHAT menunggu sheet sumber.')
+        print('INFO: Sheet RKP-RLHP tidak ada; Monitoring PHAT menunggu sheet sumber.')
     print(f'{OUTPUT}: stok {list(map(fmt,stock))}; {len(details)} DKO')
 
 if __name__ == '__main__':
