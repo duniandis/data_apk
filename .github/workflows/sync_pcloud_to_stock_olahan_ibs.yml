@@ -46,7 +46,10 @@ jobs:
       - name: Detect changes
         id: changes
         run: |
-          git add -A stock_olahan_ibs.csv monitoring_phat_ibs.json
+          git add -A stock_olahan_ibs.csv
+          if [ -f monitoring_phat_ibs.json ] || git ls-files --error-unmatch monitoring_phat_ibs.json >/dev/null 2>&1; then
+            git add -A -- monitoring_phat_ibs.json
+          fi
           if git diff --cached --quiet; then echo 'changed=false' >> "$GITHUB_OUTPUT"; else echo 'changed=true' >> "$GITHUB_OUTPUT"; fi
       - name: Commit and push
         if: steps.changes.outputs.changed == 'true'
