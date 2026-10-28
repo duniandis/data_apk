@@ -64,9 +64,9 @@ def should_skip_posisi(posisi_raw) -> bool:
     if posisi_raw is None:
         return False
     s = str(posisi_raw).strip().upper()
-    if s == "AFKIR":
+    if s == "XXXX":
         return True
-    if "PROSES BANSAW" in s:
+    if "XXXXXXX" in s:
         return True
     return False
 
