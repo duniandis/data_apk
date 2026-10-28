@@ -1,5 +1,5 @@
 ﻿tipe,stock_awal_m3,pengurangan_m3,stock_akhir_m3,no,tanggal,no_dko,seri_skshhk,volume_m3,tujuan,belum_proses_batang,belum_proses_m3,rencana_sortiment_m3,total_stock_olahan_m3
-RINGKASAN,366.7370,285.1637,81.5733,,,,,,,612.0000,568.1000,397.6700,479.2433
+RINGKASAN,366.7370,338.0661,28.6709,,,,,,,612.0000,568.1000,397.6700,426.3409
 DETAIL,,,,1,23-03-2025,01/DKO/SUMA/III/2025,KO.B.1101134,8.0992,"TARU AGENG - JL. By Pass Ngurah Rai No.134 Z, Kesiman Kertalangu,Denpasar Timur,Bali",,,,
 DETAIL,,,,2,10-09-2026,01/DKO/SM/IX/2026,KO.B.1272250,24.3822,"NON INDUSTRI BPK. PARDI Jalan Gempol Bypass, Kecamatan Gempol, Kabupaten Pasuruan, Jawa Timur.",,,,
 DETAIL,,,,3,13-09-2026,02/DKO/SM/IX/2026,KO.B.1273098,25.0992,INDUSTRI LANJUTAN CV BINTANG SAKTI MANDIRI,,,,
@@ -13,3 +13,6 @@ DETAIL,,,,10,17-10-2026,09/DKO/SM/X/2026,KO.B.1283500,15.6725,"INDUSTRI PRIMER U
 DETAIL,,,,11,20-10-2026,10/DKO/SM/X/2026,KO.B.1284174,26.0536,"NON INDUSTRI BPK. PARDI Jalan Gempol Bypass, Kecamatan Gempol, Kabupaten Pasuruan, Jawa Timur.",,,,
 DETAIL,,,,12,23-10-2026,11/DKO/SM/X/2026,KO.B.1285330,24.1235,"NON INDUSTRI BPK. PARDI Jalan Gempol Bypass, Kecamatan Gempol, Kabupaten Pasuruan, Jawa Timur.",,,,
 DETAIL,,,,13,24-10-2026,12/DKO/SM/X/2026,KO.B.1285594,22.5424,"NON INDUSTRI BPK. PARDI Jalan Gempol Bypass, Kecamatan Gempol, Kabupaten Pasuruan, Jawa Timur.",,,,
+DETAIL,,,,14,28-10-2026,13/DKO/SM/X/2026,KO.B.1286694,16.5269,"INDUSTRI PRIMER UD. HARAPAN BELITUNG JAYA - JL. ALALAK TENGAH RT.03 RW.01 KELURAHAN ALALAK TENGAH BANJAR, BANJARMASIN",,,,
+DETAIL,,,,15,28-10-2026,14/DKO/SM/X/2026,KO.B.1286695,13.0547,"NON INDUSTRI BPK. FADIL Jalan Gempol Bypass, Kecamatan Gempol, Kabupaten Pasuruan, Jawa Timur.",,,,
+DETAIL,,,,16,28-10-2026,15/DKO/SM/X/2026,KO.B.1286705,23.3208,"NON INDUSTRI BPK. FADIL Jalan Gempol Bypass, Kecamatan Gempol, Kabupaten Pasuruan, Jawa Timur.",,,,
