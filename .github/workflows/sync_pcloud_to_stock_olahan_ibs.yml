@@ -43,17 +43,27 @@ jobs:
         run: |
           pip install openpyxl==3.1.5
           python tools/export_stock_olahan_ibs_csv.py
-          python tools/check_excel_changes.py
-      - name: Detect changes
+      - name: Detect Excel changes
         id: changes
+        shell: bash
         run: |
-          git add -A stock_olahan_ibs.csv stock_olahan_ibs_excel.sha256
+          set -euo pipefail
+          sha256sum "data ukur LHP IBS.xlsx" | cut -d ' ' -f 1 > stock_olahan_ibs_excel.sha256
+          if [ -f stock_olahan_ibs_excel.sha256 ]; then
+            echo "Excel SHA256 terbaru: $(cat stock_olahan_ibs_excel.sha256)"
+          fi
+          git add -- stock_olahan_ibs.csv stock_olahan_ibs_excel.sha256
+          if git diff --cached --quiet -- stock_olahan_ibs_excel.sha256; then
+            echo 'excel_changed=false' >> "$GITHUB_OUTPUT"
+            echo 'Excel sama dengan pemeriksaan sebelumnya: tidak kirim ntfy.'
+          else
+            echo 'excel_changed=true' >> "$GITHUB_OUTPUT"
+            echo 'Excel berubah: akan kirim ntfy setelah commit dan tunggu 10 menit.'
+          fi
           if git diff --cached --quiet; then
             echo 'changed=false' >> "$GITHUB_OUTPUT"
-            echo 'Tidak ada perubahan isi Excel atau CSV.'
           else
             echo 'changed=true' >> "$GITHUB_OUTPUT"
-            git diff --cached --stat
           fi
       - name: Commit and push
         if: steps.changes.outputs.changed == 'true'
@@ -64,10 +74,10 @@ jobs:
           git pull --rebase
           git push
       - name: Wait for GitHub Pages
-        if: steps.changes.outputs.changed == 'true'
+        if: steps.changes.outputs.excel_changed == 'true'
         run: sleep 600
       - name: Send summary and detail button to ntfy
-        if: steps.changes.outputs.changed == 'true'
+        if: steps.changes.outputs.excel_changed == 'true'
         run: |
           python tools/stock_olahan_ibs_to_message.py > notification.txt
 
