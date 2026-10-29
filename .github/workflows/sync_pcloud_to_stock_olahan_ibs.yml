@@ -43,11 +43,18 @@ jobs:
         run: |
           pip install openpyxl==3.1.5
           python tools/export_stock_olahan_ibs_csv.py
+          python tools/check_excel_changes.py
       - name: Detect changes
         id: changes
         run: |
-          git add -A stock_olahan_ibs.csv
-          if git diff --cached --quiet; then echo 'changed=false' >> "$GITHUB_OUTPUT"; else echo 'changed=true' >> "$GITHUB_OUTPUT"; fi
+          git add -A stock_olahan_ibs.csv stock_olahan_ibs_excel.sha256
+          if git diff --cached --quiet; then
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+            echo 'Tidak ada perubahan isi Excel atau CSV.'
+          else
+            echo 'changed=true' >> "$GITHUB_OUTPUT"
+            git diff --cached --stat
+          fi
       - name: Commit and push
         if: steps.changes.outputs.changed == 'true'
         run: |
