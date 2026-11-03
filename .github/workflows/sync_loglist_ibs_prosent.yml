@@ -23,7 +23,7 @@ jobs:
     env:
       # TOPIK NTFY DITULIS LANGSUNG DI SINI.
       # Isi nama topik saja, bukan URL.
-      NTFY_TOPIC: "ibs_test"
+      NTFY_TOPIC: "auto-stock-ibs"
 
       # Server ntfy.
       NTFY_SERVER: "https://ntfy.sh"
