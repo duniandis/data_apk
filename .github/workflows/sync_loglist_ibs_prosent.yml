@@ -2,10 +2,8 @@ name: Sync pCloud Excel -> Persentase Panjang IBS
 
 on:
   schedule:
-    # Setiap jam pada menit 40 UTC.
-    # Sama dengan setiap jam pada menit 40 WIB.
+    # Setiap jam pada menit 40 UTC (menit 40 WIB).
     - cron: "40 * * * *"
-
   workflow_dispatch: {}
 
 permissions:
@@ -21,11 +19,8 @@ jobs:
     timeout-minutes: 60
 
     env:
-      # TOPIK NTFY DITULIS LANGSUNG DI SINI.
-      # Isi nama topik saja, bukan URL.
+      # Topik ntfy ditulis langsung di workflow, tidak menggunakan Secret.
       NTFY_TOPIC: "auto-stock-ibs"
-
-      # Server ntfy.
       NTFY_SERVER: "https://ntfy.sh"
 
     steps:
@@ -76,7 +71,6 @@ jobs:
               --low-level-retries 20 \
               --stats 10s \
               --stats-one-line; then
-
               downloaded=true
               break
             fi
@@ -92,7 +86,6 @@ jobs:
           fi
 
           test -s UKUR_MUTASI_LOG_IBS.xlsx
-          ls -lh UKUR_MUTASI_LOG_IBS.xlsx
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -108,48 +101,33 @@ jobs:
       - name: Export Excel to loglist CSV
         run: |
           set -euo pipefail
-
           python tools/export_range_to_csv_loglist_ibs_prosent.py
-
-          if [ ! -s loglist_ibs_prosent.csv ]; then
-            echo "loglist_ibs_prosent.csv tidak tersedia atau kosong."
-            exit 1
-          fi
+          test -s loglist_ibs_prosent.csv
 
       - name: Hitung persentase panjang per posisi
         run: |
           set -euo pipefail
-
           python tools/prosent_ibs.py
-
-          if [ ! -s prosent_ibs.csv ]; then
-            echo "prosent_ibs.csv tidak tersedia atau kosong."
-            exit 1
-          fi
+          test -s prosent_ibs.csv
 
       - name: Configure Git
         run: |
           set -euo pipefail
-
           git config user.name "github-actions[bot]"
-          git config user.email \
-            "github-actions[bot]@users.noreply.github.com"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Commit and push CSV
         run: |
           set -euo pipefail
 
-          git add \
-            loglist_ibs_prosent.csv \
-            prosent_ibs.csv
+          git add loglist_ibs_prosent.csv prosent_ibs.csv
 
           if [ -f .sync_state_loglist_ibs_prosent.json ]; then
             git add .sync_state_loglist_ibs_prosent.json
           fi
 
           if ! git diff --cached --quiet; then
-            git commit -m \
-              "Auto update loglist dan persentase panjang IBS"
+            git commit -m "Auto update loglist dan persentase panjang IBS"
           else
             echo "Tidak ada perubahan CSV."
           fi
@@ -163,13 +141,6 @@ jobs:
       - name: Kirim notifikasi ntfy jika rekap berubah
         run: |
           set -euo pipefail
-
-          if [ -z "$NTFY_TOPIC" ] || \
-             [ "$NTFY_TOPIC" = "GANTI_DENGAN_TOPIC_NTFY_ANDA" ]; then
-            echo "Isi NTFY_TOPIC di bagian env workflow terlebih dahulu."
-            exit 1
-          fi
-
           python tools/prosent_ibs.py --notify
 
       - name: Commit and push status notifikasi
@@ -177,12 +148,10 @@ jobs:
           set -euo pipefail
 
           test -s .ntfy_state_prosent_ibs.json
-
           git add .ntfy_state_prosent_ibs.json
 
           if ! git diff --cached --quiet; then
-            git commit -m \
-              "Simpan status notifikasi persentase panjang IBS"
+            git commit -m "Simpan status notifikasi persentase panjang IBS"
           else
             echo "Status notifikasi tidak berubah."
           fi
