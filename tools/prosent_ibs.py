@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+"""Buat rekap persentase panjang stock IBS dan kirim notifikasi ringkas ntfy."""
+
 import argparse
 import csv
 import hashlib
@@ -11,31 +13,53 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from urllib.request import Request, urlopen
 
+
 SOURCE = Path("loglist_ibs_prosent.csv")
 OUTPUT = Path("prosent_ibs.csv")
 STATE = Path(".ntfy_state_prosent_ibs.json")
 
 DETAIL_URL = "https://duniandis.github.io/prosent_ibs/"
-TITLE = "Prosentase Stock Kayu IBS Berdasarkan Panjang Kayu"
+NTFY_TITLE = "PROSENTASE STOCK IBS"
+NTFY_MESSAGE = "Prosentase stock IBS berdasarkan panjang kayu telah diperbarui."
 
 
-def angka(value):
-    return Decimal(str(value).strip().replace(",", "."))
+def decimal_value(value, *, allow_blank=False):
+    text = str(value or "").strip().replace(",", ".")
+
+    if not text and allow_blank:
+        return Decimal("0")
+
+    try:
+        number = Decimal(text)
+    except InvalidOperation as error:
+        raise ValueError(f"Nilai angka tidak valid: {value!r}") from error
+
+    if not number.is_finite() or number < 0:
+        raise ValueError(f"Nilai angka tidak valid: {value!r}")
+
+    return number
 
 
-def label_panjang(value):
-    return format(value.normalize(), "f") + "M"
-
-
-def persentase(value, total):
+def percentage(value, total):
     if not total:
         return ""
-    return f"{Decimal(value) * 100 / Decimal(total):.2f}"
+    return f"{Decimal(value) * Decimal('100') / Decimal(total):.2f}"
 
 
-def buat_rekap():
-    # posisi -> panjang kelompok -> batang, volume, volume kosong
-    data = defaultdict(
+def length_label(value):
+    return f"{value.normalize():f}M"
+
+
+def position_sort_key(value):
+    return (value.upper() != "BLOK", value.upper())
+
+
+def make_summary():
+    if not SOURCE.is_file():
+        raise FileNotFoundError(f"File sumber tidak ditemukan: {SOURCE}")
+
+    # posisi -> kelompok panjang -> batang, volume, volume kosong
+    grouped = defaultdict(
         lambda: defaultdict(
             lambda: {
                 "batang": 0,
@@ -45,169 +69,119 @@ def buat_rekap():
         )
     )
 
-    with SOURCE.open(encoding="utf-8-sig", newline="") as f:
-        reader = csv.DictReader(f)
+    with SOURCE.open("r", encoding="utf-8-sig", newline="") as file:
+        reader = csv.DictReader(file)
+        if not reader.fieldnames:
+            raise ValueError("CSV sumber kosong atau tidak memiliki header.")
 
         columns = {
             (name or "").strip().lower(): name
-            for name in (reader.fieldnames or [])
+            for name in reader.fieldnames
         }
 
-        required = ["nobtg", "panjang", "volume", "posisi"]
-        missing = [name for name in required if name not in columns]
-
-        if missing:
-            raise ValueError(
-                "Kolom wajib tidak ditemukan: " + ", ".join(missing)
-            )
+        for required in ("nobtg", "panjang", "volume", "posisi"):
+            if required not in columns:
+                raise ValueError(f"Kolom CSV tidak ditemukan: {required}")
 
         for row_number, row in enumerate(reader, start=2):
-            if not any(str(v or "").strip() for v in row.values()):
-                continue
-
-            def get(name):
-                return str(row.get(columns[name]) or "").strip()
-
+            get = lambda name: str(row.get(columns[name]) or "").strip()
+            no_btg = get("nobtg")
             posisi = get("posisi")
-            nomor = get("nobtg")
 
-            if not posisi or not nomor:
+            if not no_btg or not posisi:
                 raise ValueError(
                     f"Baris {row_number}: noBtg atau posisi kosong."
                 )
 
             try:
-                panjang = angka(get("panjang"))
-                raw_volume = get("volume")
-                volume = (
-                    angka(raw_volume)
-                    if raw_volume
-                    else Decimal("0")
-                )
-            except InvalidOperation as exc:
-                raise ValueError(
-                    f"Baris {row_number}: panjang/volume bukan angka."
-                ) from exc
+                panjang = decimal_value(get("panjang"))
+                volume_text = get("volume")
+                volume = decimal_value(volume_text, allow_blank=True)
+            except ValueError as error:
+                raise ValueError(f"Baris {row_number}: {error}") from error
 
-            if (
-                not panjang.is_finite()
-                or not volume.is_finite()
-                or panjang <= 0
-                or volume < 0
-            ):
-                raise ValueError(
-                    f"Baris {row_number}: panjang/volume tidak valid."
-                )
+            if panjang <= 0:
+                raise ValueError(f"Baris {row_number}: panjang harus lebih dari 0.")
 
-            # Contoh: 2.40 -> 2; 2.50 -> 2.5; 3.00 -> 3.
+            # 2.00-2.49 menjadi 2M; 2.50-2.99 menjadi 2.5M; dst.
             kelompok = (panjang * 2 // 1) / 2
-
-            item = data[posisi][kelompok]
+            item = grouped[posisi][kelompok]
             item["batang"] += 1
             item["volume"] += volume
-            item["volume_kosong"] += int(not raw_volume)
+            item["volume_kosong"] += int(not volume_text)
 
-    if not data:
-        raise ValueError("CSV sumber tidak memiliki data.")
-
-    posisi_urut = sorted(
-        data,
-        key=lambda name: (name.upper() != "BLOK", name.upper()),
-    )
+    if not grouped:
+        raise ValueError("Tidak ada data stock yang dapat direkap.")
 
     records = []
-    lines = [
-        "Persentase berdasarkan jumlah batang per posisi.",
-        "Kelompok panjang dibulatkan turun setiap 0.5 meter.",
-    ]
 
-    for posisi in posisi_urut:
-        kelompok_data = data[posisi]
-        total_batang = sum(x["batang"] for x in kelompok_data.values())
+    for posisi in sorted(grouped, key=position_sort_key):
+        per_panjang = grouped[posisi]
+        total_batang = sum(item["batang"] for item in per_panjang.values())
         total_volume = sum(
-            (x["volume"] for x in kelompok_data.values()),
+            (item["volume"] for item in per_panjang.values()),
             Decimal("0"),
         )
-        volume_kosong = sum(
-            x["volume_kosong"] for x in kelompok_data.values()
-        )
 
-        lines.extend([
-            "",
-            posisi,
-            f"Total: {total_batang} btg | {total_volume:.4f} m³",
-        ])
-
-        for panjang, item in sorted(kelompok_data.items()):
-            persen_batang = persentase(item["batang"], total_batang)
-            persen_volume = persentase(item["volume"], total_volume)
-
-            records.append({
-                "posisi": posisi,
-                "panjang_m": format(panjang.normalize(), "f"),
-                "kelompok_panjang": label_panjang(panjang),
-                "batang": item["batang"],
-                "volume_m3": f'{item["volume"]:.4f}',
-                "persen_batang": persen_batang,
-                "persen_volume": persen_volume,
-                "total_batang_posisi": total_batang,
-                "total_volume_posisi_m3": f"{total_volume:.4f}",
-                "volume_kosong": item["volume_kosong"],
-            })
-
-            lines.append(
-                f'{label_panjang(panjang)}: '
-                f'{item["batang"]} btg ({persen_batang}%)'
+        for panjang in sorted(per_panjang):
+            item = per_panjang[panjang]
+            records.append(
+                {
+                    "posisi": posisi,
+                    "panjang_m": f"{panjang.normalize():f}",
+                    "kelompok_panjang": length_label(panjang),
+                    "batang": item["batang"],
+                    "volume_m3": f'{item["volume"]:.4f}',
+                    "persen_batang": percentage(item["batang"], total_batang),
+                    "persen_volume": percentage(item["volume"], total_volume),
+                    "total_batang_posisi": total_batang,
+                    "total_volume_posisi_m3": f"{total_volume:.4f}",
+                    "volume_kosong": item["volume_kosong"],
+                }
             )
 
-        if volume_kosong:
-            lines.append(
-                f"Catatan: {volume_kosong} batang belum ada volume."
-            )
-
-    with OUTPUT.open("w", encoding="utf-8-sig", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=list(records[0]))
+    with OUTPUT.open("w", encoding="utf-8-sig", newline="") as file:
+        writer = csv.DictWriter(file, fieldnames=list(records[0]))
         writer.writeheader()
         writer.writerows(records)
 
-    print(f"Rekap selesai: {OUTPUT}, {len(records)} kelompok.")
-    return "\n".join(lines)
+    print(f"Rekap selesai: {len(records)} kelompok panjang -> {OUTPUT}")
 
 
-def kirim_ntfy(message):
-    fingerprint = hashlib.sha256(OUTPUT.read_bytes()).hexdigest()
+def file_hash(path):
+    hasher = hashlib.sha256()
+    with path.open("rb") as file:
+        for chunk in iter(lambda: file.read(1024 * 1024), b""):
+            hasher.update(chunk)
+    return hasher.hexdigest()
 
-    if STATE.exists():
+
+def publish_notification():
+    if not OUTPUT.is_file():
+        raise FileNotFoundError(f"File rekap tidak ditemukan: {OUTPUT}")
+
+    summary_hash = file_hash(OUTPUT)
+
+    if STATE.is_file():
         previous = json.loads(STATE.read_text(encoding="utf-8"))
-        if previous.get("sha256") == fingerprint:
-            print("Rekap sama dengan notifikasi terakhir; ntfy dilewati.")
+        if previous.get("sha256") == summary_hash:
+            print("Rekap belum berubah; notifikasi ntfy dilewati.")
             return
 
     topic = os.environ.get("NTFY_TOPIC", "").strip()
-    if not topic or "/" in topic:
-        raise ValueError(
-            "Isi NTFY_TOPIC dengan nama topik saja, bukan URL."
-        )
-
-    server = os.environ.get(
-        "NTFY_SERVER", "https://ntfy.sh"
-    ).strip().rstrip("/") or "https://ntfy.sh"
-
+    server = os.environ.get("NTFY_SERVER", "https://ntfy.sh").strip().rstrip("/")
     token = os.environ.get("NTFY_TOKEN", "").strip()
 
-    # Jaga ukuran pesan. CSV tetap memuat seluruh kelompok.
-    if len(message.encode("utf-8")) > 3500:
-        shortened = (
-            message.encode("utf-8")[:3300]
-            .decode("utf-8", errors="ignore")
-            .rsplit("\n", 1)[0]
-        )
-        message = shortened + "\n\nRekap lengkap: tekan Lihat Detail."
+    if not topic:
+        raise ValueError("NTFY_TOPIC kosong.")
+    if not server:
+        raise ValueError("NTFY_SERVER kosong.")
 
+    # Notifikasi sengaja tidak memuat rincian posisi atau angka stock.
     payload = {
         "topic": topic,
-        "title": TITLE,
-        "message": message,
+        "title": NTFY_TITLE,
+        "message": NTFY_MESSAGE,
         "click": DETAIL_URL,
         "actions": [
             {
@@ -233,14 +207,14 @@ def kirim_ntfy(message):
         result = json.load(response)
 
     if result.get("event") != "message" or not result.get("id"):
-        raise RuntimeError("Server belum mengonfirmasi pesan ntfy.")
+        raise RuntimeError("Server ntfy belum mengonfirmasi pengiriman pesan.")
 
-    # Simpan hanya setelah pengiriman berhasil.
+    # Status hanya disimpan setelah notifikasi benar-benar berhasil dikirim.
     STATE.write_text(
-        json.dumps({"sha256": fingerprint}, indent=2) + "\n",
+        json.dumps({"sha256": summary_hash}, indent=2) + "\n",
         encoding="utf-8",
     )
-    print("Notifikasi ntfy berhasil dikirim.")
+    print("Notifikasi ntfy ringkas berhasil dikirim.")
 
 
 def main():
@@ -248,12 +222,9 @@ def main():
     parser.add_argument("--notify", action="store_true")
     args = parser.parse_args()
 
-    message = buat_rekap()
-
+    make_summary()
     if args.notify:
-        kirim_ntfy(message)
-    else:
-        print(message)
+        publish_notification()
 
 
 if __name__ == "__main__":
