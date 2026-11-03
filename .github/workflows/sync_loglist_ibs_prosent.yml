@@ -1,15 +1,16 @@
-name: Sync pCloud Excel -> loglist_ibs_prosent.csv
+name: Sync pCloud Excel -> Persentase Panjang IBS
 
 on:
   schedule:
-    # tiap jam lewat menit 35 (UTC)
+    # Setiap jam pada menit 40 UTC.
+    # Sama dengan setiap jam pada menit 40 WIB.
     - cron: "40 * * * *"
+
   workflow_dispatch: {}
 
 permissions:
   contents: write
 
-# Tahan banting: satu jalur sync, tapi JANGAN saling membatalkan
 concurrency:
   group: sync-pcloud
   cancel-in-progress: false
@@ -19,39 +20,78 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
+    env:
+      # TOPIK NTFY DITULIS LANGSUNG DI SINI.
+      # Isi nama topik saja, bukan URL.
+      NTFY_TOPIC: "ibs_test"
+
+      # Server ntfy.
+      NTFY_SERVER: "https://ntfy.sh"
+
     steps:
-      - name: Checkout repo
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Install rclone
         run: |
+          set -euo pipefail
           curl -fsSL https://rclone.org/install.sh | sudo bash
 
-      - name: Configure rclone (pCloud)
+      - name: Configure rclone pCloud
         env:
           PCLOUD_TOKEN: ${{ secrets.PCLOUD_TOKEN }}
         run: |
+          set -euo pipefail
+
+          if [ -z "$PCLOUD_TOKEN" ]; then
+            echo "Secret PCLOUD_TOKEN belum diisi."
+            exit 1
+          fi
+
           mkdir -p ~/.config/rclone
+
           cat > ~/.config/rclone/rclone.conf <<EOF
           [pcloud]
           type = pcloud
           token = ${PCLOUD_TOKEN}
           EOF
 
-      - name: Download Excel from pCloud (retry)
+          chmod 600 ~/.config/rclone/rclone.conf
+
+      - name: Download Excel from pCloud
         run: |
+          set -euo pipefail
+
+          downloaded=false
+
           for i in 1 2 3 4 5; do
-            echo "Attempt $i..."
-            rclone copyto \
+            echo "Percobaan download ke-$i"
+
+            if rclone copyto \
               "pcloud:CLOUD SYNC/DEKSTOP/01 DATA CLOUD (UPDATE)/CV INU BATARA SEJAHTERA/TUK MUARA INU/DATA_KAYU_IBS/UKUR_MUTASI_LOG_IBS.xlsx" \
               "./UKUR_MUTASI_LOG_IBS.xlsx" \
-              --retries 5 --low-level-retries 20 \
-              --stats 10s --stats-one-line && break
-            sleep $((i*10))
+              --retries 5 \
+              --low-level-retries 20 \
+              --stats 10s \
+              --stats-one-line; then
+
+              downloaded=true
+              break
+            fi
+
+            if [ "$i" -lt 5 ]; then
+              sleep "$((i * 10))"
+            fi
           done
 
+          if [ "$downloaded" != "true" ]; then
+            echo "Gagal mengunduh Excel dari pCloud."
+            exit 1
+          fi
+
+          test -s UKUR_MUTASI_LOG_IBS.xlsx
           ls -lh UKUR_MUTASI_LOG_IBS.xlsx
 
       - name: Setup Python
@@ -61,32 +101,88 @@ jobs:
 
       - name: Install Python dependencies
         run: |
+          set -euo pipefail
           python -m pip install --upgrade pip
-          pip install openpyxl==3.1.5
+          python -m pip install openpyxl==3.1.5
 
-      - name: Export Excel range -> loglist_ibs_prosent.csv
+      - name: Export Excel to loglist CSV
         run: |
+          set -euo pipefail
+
           python tools/export_range_to_csv_loglist_ibs_prosent.py
-          test -f loglist_ibs_prosent.csv || (echo "loglist_ibs_prosent.csv not generated" && exit 1)
-          head -n 3 loglist_ibs_prosent.csv || true
 
-      - name: Commit changes if any
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          # pastikan state ada agar git add tidak gagal
-          test -f .sync_state_loglist_ibs_prosent.json || echo "{}" > .sync_state_loglist_ibs_prosent.json
-
-          git add loglist_ibs_prosent.csv .sync_state_loglist_ibs_prosent.json
-
-          if git diff --cached --quiet; then
-            echo "No changes."
-            exit 0
+          if [ ! -s loglist_ibs_prosent.csv ]; then
+            echo "loglist_ibs_prosent.csv tidak tersedia atau kosong."
+            exit 1
           fi
 
-          git commit -m "Auto update loglist_ibs_prosent.csv" || echo "Nothing to commit"
+      - name: Hitung persentase panjang per posisi
+        run: |
+          set -euo pipefail
 
-          # lebih tahan konflik push kalau ada update lain di repo
+          python tools/prosent_ibs.py
+
+          if [ ! -s prosent_ibs.csv ]; then
+            echo "prosent_ibs.csv tidak tersedia atau kosong."
+            exit 1
+          fi
+
+      - name: Configure Git
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email \
+            "github-actions[bot]@users.noreply.github.com"
+
+      - name: Commit and push CSV
+        run: |
+          set -euo pipefail
+
+          git add \
+            loglist_ibs_prosent.csv \
+            prosent_ibs.csv
+
+          if [ -f .sync_state_loglist_ibs_prosent.json ]; then
+            git add .sync_state_loglist_ibs_prosent.json
+          fi
+
+          if ! git diff --cached --quiet; then
+            git commit -m \
+              "Auto update loglist dan persentase panjang IBS"
+          else
+            echo "Tidak ada perubahan CSV."
+          fi
+
+          git pull --rebase
+          git push
+
+      - name: Kirim notifikasi ntfy jika rekap berubah
+        run: |
+          set -euo pipefail
+
+          if [ -z "$NTFY_TOPIC" ] || \
+             [ "$NTFY_TOPIC" = "GANTI_DENGAN_TOPIC_NTFY_ANDA" ]; then
+            echo "Isi NTFY_TOPIC di bagian env workflow terlebih dahulu."
+            exit 1
+          fi
+
+          python tools/prosent_ibs.py --notify
+
+      - name: Commit and push status notifikasi
+        run: |
+          set -euo pipefail
+
+          test -s .ntfy_state_prosent_ibs.json
+
+          git add .ntfy_state_prosent_ibs.json
+
+          if ! git diff --cached --quiet; then
+            git commit -m \
+              "Simpan status notifikasi persentase panjang IBS"
+          else
+            echo "Status notifikasi tidak berubah."
+          fi
+
           git pull --rebase
           git push
