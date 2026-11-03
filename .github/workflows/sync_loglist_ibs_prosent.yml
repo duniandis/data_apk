@@ -157,6 +157,9 @@ jobs:
           git pull --rebase
           git push
 
+      - name: Tunggu 10 menit sebelum mengirim ntfy
+        run: sleep 600
+
       - name: Kirim notifikasi ntfy jika rekap berubah
         run: |
           set -euo pipefail
